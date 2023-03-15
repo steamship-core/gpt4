@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, Type
 import json
 import openai
 from pydantic import Field
-from steamship import Steamship, Block, Tag
+from steamship import Steamship, Block, Tag, SteamshipError
 from steamship.data.tags.tag_constants import TagKind, RoleTag
 from steamship.invocable import Config, InvocableResponse, InvocationContext
 from steamship.plugin.generator import Generator
@@ -29,7 +29,7 @@ class GPT4Plugin(Generator):
         openai_api_key: str = Field("",
                                     description="An openAI API key to use. If left default, will use Steamship's API key.")
         max_tokens: int = Field(256, description="The maximum number of tokens to generate per request. Can be overridden in runtime options.")
-        model: Optional[str] = Field("gpt-3.5-turbo",
+        model: Optional[str] = Field("gpt-4",
                                      description="The OpenAI model to use.  Can be a pre-existing fine-tuned model.")
         temperature: Optional[float] = Field(0.4,
                                              description="Controls randomness. Lower values produce higher likelihood / more predictable results; higher values produce more variety. Values between 0-1.")
@@ -64,7 +64,16 @@ class GPT4Plugin(Generator):
         openai.api_key = self.config.openai_api_key
 
 
+
     def prepare_message(self, block: Block) -> Dict[str, str]:
+        role = None
+        for tag in block.tags:
+            if tag.kind == TagKind.ROLE:
+                role = tag.name
+
+        if role is None:
+            raise SteamshipError("Could not find role on input block (must have tag with kind='role' and name='system|assistant|user'")
+
         return {
             "role" : role,
             "content" : block.text
@@ -73,13 +82,15 @@ class GPT4Plugin(Generator):
 
     def prepare_messages(self, blocks: List[Block]) -> List[Dict[str, str]]:
         # TODO: remove is_text check here when can handle image etc. input
-        return [self.prepare_message(block) for block in blocks if block.is_text()]
+        return [self.prepare_message(block) for block in blocks if block.text is not None and block.text != ""]
 
-    def generate_with_retry(self, user: str, messages: List[Dict[str, str]]) -> List[Block]:
+    def generate_with_retry(self, user: str, messages: List[Dict[str, str]], options: Dict) -> List[Block]:
         """Use tenacity to retry the completion call."""
 
         logging.info(f"Making OpenAI dall-e call on behalf of user with id: {user}")
         """Call the API to generate the next section of text."""
+
+        stopwords = options.get('stop', None) if options is not None else None
 
         @retry(
             reraise=True,
@@ -102,7 +113,7 @@ class GPT4Plugin(Generator):
                 presence_penalty=self.config.presence_penalty,
                 frequency_penalty=self.config.frequency_penalty,
                 max_tokens=self.config.max_tokens,
-                stop=self.config.stop,
+                stop=stopwords,
                 n=self.config.n,
             )
 
@@ -110,10 +121,10 @@ class GPT4Plugin(Generator):
         logging.info("Retry statistics: " + json.dumps(_generate_with_retry.retry.statistics))
 
         # Fetch text from responses
-        texts = [choice['message'] for choice in openai_result['choices']]
+        texts = [choice['message']['content'] for choice in openai_result['choices']]
 
 
-        return [Block(text = text, tags=Tag(kind=TagKind.ROLE, name=RoleTag.ASSISTANT)) for text in texts]
+        return [Block(text = text, tags=[Tag(kind=TagKind.ROLE, name=RoleTag.ASSISTANT)]) for text in texts]
 
 
 
@@ -126,6 +137,6 @@ class GPT4Plugin(Generator):
 
         messages = self.prepare_messages(request.data.blocks)
         user_id = self.context.user_id if self.context is not None else "testing"
-        generated_blocks = self.generate_with_retry(messages=messages, user=user_id)
+        generated_blocks = self.generate_with_retry(messages=messages, user=user_id, options=request.data.options)
 
         return InvocableResponse(data=RawBlockAndTagPluginOutput(blocks= generated_blocks))

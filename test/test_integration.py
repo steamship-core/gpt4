@@ -5,16 +5,16 @@ from PIL import Image
 
 
 import pytest
-from steamship import Block, File, PluginInstance, Steamship, TaskState, MimeTypes
+from steamship import Block, File, PluginInstance, Steamship, TaskState, MimeTypes,Tag
+from steamship.data.tags.tag_constants import RoleTag, TagKind
 from steamship.data import GenerationTag, TagKind, TagValueKey
 
-GENERATOR_HANDLE = "dall-e"
 
 
 @pytest.fixture
 def steamship() -> Steamship:
     """Instantiate a Steamship client."""
-    return Steamship(profile="test")
+    return Steamship(profile="dave-staging")
 
 
 
@@ -23,18 +23,21 @@ def test_generator(steamship: Steamship):
 
 
     with steamship.temporary_workspace() as steamship:
-        dalle = steamship.use_plugin("dall-e")
 
-        task = dalle.generate(text="A cat on a bicycle", append_output_to_file=True)
-        task.wait()
-        blocks = task.output.blocks
+        gpt4 = steamship.use_plugin("gpt-4")
 
-        assert blocks is not None
-        assert len(blocks) == 1
-        assert blocks[0].mime_type == MimeTypes.PNG
-        content = blocks[0].raw()
-        img = Image.open(io.BytesIO(content))
-        img.show()
+        file = File.create(steamship, blocks =
+         [
+            Block(text="You are an assistant who loves to count", tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
+                  mime_type=MimeTypes.TXT),
+            Block(text="1 2 3 4", tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)], mime_type=MimeTypes.TXT),
+        ])
+
+        generate_task = gpt4.generate(input_file_id=file.id)
+        generate_task.wait()
+        output = generate_task.output
+
+
 
 
 
