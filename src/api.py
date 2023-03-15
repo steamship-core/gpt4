@@ -48,6 +48,8 @@ class GPT4Plugin(Generator):
 
         default_role: str = Field(RoleTag.USER.value, description="The default role to use for a block that does not have a Tag of kind='role'")
 
+        default_system_prompt: str = Field("", description="System prompt that will be prepended before every request")
+
 
 
     @classmethod
@@ -83,8 +85,15 @@ class GPT4Plugin(Generator):
 
 
     def prepare_messages(self, blocks: List[Block]) -> List[Dict[str, str]]:
+        messages = []
+        if self.config.default_system_prompt != "":
+            messages.append({
+            "role" : RoleTag.SYSTEM,
+            "content" : self.config.default_system_prompt
+        })
         # TODO: remove is_text check here when can handle image etc. input
-        return [self.prepare_message(block) for block in blocks if block.text is not None and block.text != ""]
+        messages.extend([self.prepare_message(block) for block in blocks if block.text is not None and block.text != ""])
+        return messages
 
     def generate_with_retry(self, user: str, messages: List[Dict[str, str]], options: Dict) -> List[Block]:
         """Use tenacity to retry the completion call."""

@@ -56,3 +56,20 @@ def test_generator_without_role(steamship: Steamship):
         output = generate_task.output
         print(output)
 
+
+def test_stopwords(steamship: Steamship):
+    with steamship.temporary_workspace() as steamship:
+        gpt4 = steamship.use_plugin("gpt-4")
+
+        file = File.create(steamship, blocks=
+        [
+            Block(text="You are an assistant who loves to count", tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
+                  mime_type=MimeTypes.TXT),
+            Block(text="1 2 3 4", tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)], mime_type=MimeTypes.TXT),
+        ])
+
+        generate_task = gpt4.generate(input_file_id=file.id, options={'stop':['6','7']})
+        generate_task.wait()
+        output = generate_task.output
+        print(output.blocks[0].text)
+

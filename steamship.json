@@ -1,7 +1,7 @@
 {
 	"type": "plugin",
 	"handle": "gpt-4",
-	"version": "0.0.1-rc.2",
+	"version": "0.0.1-rc.3",
 	"description": "",
 	"author": "dave",
 	"entrypoint": "Unused",
@@ -77,6 +77,11 @@
 			"type": "string",
 			"description": "The default role to use for a block that does not have a Tag of kind='role'",
 			"default": "user"
+		},
+		"default_system_prompt": {
+			"type": "string",
+			"description": "System prompt that will be prepended before every request",
+			"default": ""
 		}
 	},
 	"steamshipRegistry": {
