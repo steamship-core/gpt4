@@ -1,7 +1,7 @@
 {
 	"type": "plugin",
 	"handle": "gpt-4",
-	"version": "0.0.1-rc.1",
+	"version": "0.0.1-rc.2",
 	"description": "",
 	"author": "dave",
 	"entrypoint": "Unused",
@@ -72,10 +72,15 @@
 			"type": "number",
 			"description": "How many completions to generate for each prompt.",
 			"default": 1
+		},
+		"default_role": {
+			"type": "string",
+			"description": "The default role to use for a block that does not have a Tag of kind='role'",
+			"default": "user"
 		}
 	},
 	"steamshipRegistry": {
-		"tagline": "",
+		"tagline": "Complete prompts and chats with GPT-4",
 		"tagline2": null,
 		"usefulFor": null,
 		"videoUrl": null,
@@ -83,13 +88,17 @@
 		"demoUrl": null,
 		"blogUrl": null,
 		"jupyterUrl": null,
-		"authorGithub": "",
-		"authorName": "dave",
-		"authorEmail": null,
+		"authorGithub": "dkolas",
+		"authorName": "dkolas",
+		"authorEmail": "developers@steamship.com",
 		"authorTwitter": null,
 		"authorUrl": null,
 		"tags": [
-			"Prompt API"
+			"GPT-4",
+			"Prompt Completion",
+			"LLM",
+			"GPT",
+			"OpenAI"
 		]
 	}
 }

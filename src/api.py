@@ -46,6 +46,8 @@ class GPT4Plugin(Generator):
                                                  description="Timeout for requests to OpenAI completion API. Default is 600 seconds.")
         n: Optional[int] = Field(1, description="How many completions to generate for each prompt.")
 
+        default_role: str = Field(RoleTag.USER.value, description="The default role to use for a block that does not have a Tag of kind='role'")
+
 
 
     @classmethod
@@ -72,7 +74,7 @@ class GPT4Plugin(Generator):
                 role = tag.name
 
         if role is None:
-            raise SteamshipError("Could not find role on input block (must have tag with kind='role' and name='system|assistant|user'")
+            role = self.config.default_role
 
         return {
             "role" : role,

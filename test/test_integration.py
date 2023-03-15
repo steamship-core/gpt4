@@ -39,5 +39,20 @@ def test_generator(steamship: Steamship):
 
 
 
+def test_generator_without_role(steamship: Steamship):
 
+
+    with steamship.temporary_workspace() as steamship:
+
+        gpt4 = steamship.use_plugin("gpt-4")
+
+        file = File.create(steamship, blocks =
+         [
+            Block(text="1 2 3 4"),
+        ])
+
+        generate_task = gpt4.generate(input_file_id=file.id)
+        generate_task.wait()
+        output = generate_task.output
+        print(output)
 
