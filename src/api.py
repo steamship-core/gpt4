@@ -1,3 +1,4 @@
+from collections import defaultdict
 import logging
 from typing import Any, Dict, List, Optional, Type
 import json
@@ -19,7 +20,6 @@ from tenacity import (
 )
 
 
-
 class GPT4Plugin(Generator):
     """
     Plugin for generating images from text prompts from DALL-E.
@@ -30,7 +30,7 @@ class GPT4Plugin(Generator):
                                     description="An openAI API key to use. If left default, will use Steamship's API key.")
         max_tokens: int = Field(256, description="The maximum number of tokens to generate per request. Can be overridden in runtime options.")
         model: Optional[str] = Field("gpt-4",
-                                     description="The OpenAI model to use.  Can be a pre-existing fine-tuned model.")
+                                     description="The OpenAI model to use. Can be a pre-existing fine-tuned model.")
         temperature: Optional[float] = Field(0.4,
                                              description="Controls randomness. Lower values produce higher likelihood / more predictable results; higher values produce more variety. Values between 0-1.")
         top_p: Optional[int] = Field(1,
@@ -134,8 +134,17 @@ class GPT4Plugin(Generator):
         # Fetch text from responses
         texts = [choice['message']['content'] for choice in openai_result['choices']]
 
+        # for token usage tracking, we need to include not just the token usage, but also completion id
+        # that will allow proper usage aggregration for n > 1 cases
+        completion_id = openai_result['id']
+        usage = openai_result['usage']
+        usage['completion-id'] = completion_id
+        tags = [
+            Tag(kind=TagKind.ROLE, name=RoleTag.ASSISTANT),
+            Tag(kind="token_usage", name="token_usage", value=usage),
+        ]
 
-        return [Block(text = text, tags=[Tag(kind=TagKind.ROLE, name=RoleTag.ASSISTANT)]) for text in texts]
+        return [Block(text=text, tags=tags) for text in texts]
 
 
 
@@ -150,4 +159,4 @@ class GPT4Plugin(Generator):
         user_id = self.context.user_id if self.context is not None else "testing"
         generated_blocks = self.generate_with_retry(messages=messages, user=user_id, options=request.data.options)
 
-        return InvocableResponse(data=RawBlockAndTagPluginOutput(blocks= generated_blocks))
+        return InvocableResponse(data=RawBlockAndTagPluginOutput(blocks=generated_blocks))
