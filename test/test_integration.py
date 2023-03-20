@@ -1,31 +1,15 @@
-"""Test assemblyai-s2t-blockifier via integration tests."""
-import io
-
-from PIL import Image
-
-
+"""Test gpt-4 generation via integration tests."""
 import pytest
-from steamship import Block, File, PluginInstance, Steamship, TaskState, MimeTypes,Tag
-from steamship.data.tags.tag_constants import RoleTag, TagKind
-from steamship.data import GenerationTag, TagKind, TagValueKey
+from steamship import Block, File, Steamship, MimeTypes,Tag
+from steamship.data.tags.tag_constants import RoleTag
+from steamship.data import TagKind
 
 
+GENERATOR_HANDLE = "gpt-4"
 
-@pytest.fixture
-def steamship() -> Steamship:
-    """Instantiate a Steamship client."""
-    return Steamship(profile="dave-staging")
-
-
-
-
-def test_generator(steamship: Steamship):
-
-
-    with steamship.temporary_workspace() as steamship:
-
-        gpt4 = steamship.use_plugin("gpt-4")
-
+def test_generator():
+    with Steamship.temporary_workspace() as steamship:
+        gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(steamship, blocks =
          [
             Block(text="You are an assistant who loves to count", tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
@@ -36,40 +20,54 @@ def test_generator(steamship: Steamship):
         generate_task = gpt4.generate(input_file_id=file.id)
         generate_task.wait()
         output = generate_task.output
+        assert len(output.blocks) == 1
+        for block in output.blocks:
+            assert block.text.strip().startswith("5")
+            usage_found = False
+            for tag in block.tags:
+                if tag.kind == "token_usage":
+                    usage_found = True
+            assert usage_found
 
 
 
-def test_generator_without_role(steamship: Steamship):
-
-
-    with steamship.temporary_workspace() as steamship:
-
-        gpt4 = steamship.use_plugin("gpt-4")
-
+def test_generator_without_role():
+    with Steamship.temporary_workspace() as steamship:
+        gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(steamship, blocks =
          [
             Block(text="1 2 3 4"),
         ])
-
         generate_task = gpt4.generate(input_file_id=file.id)
         generate_task.wait()
         output = generate_task.output
-        print(output)
+        assert len(output.blocks) == 1
+        for block in output.blocks:
+            usage_found = False
+            for tag in block.tags:
+                if tag.kind == "token_usage":
+                    usage_found = True
+            assert usage_found
 
 
-def test_stopwords(steamship: Steamship):
-    with steamship.temporary_workspace() as steamship:
-        gpt4 = steamship.use_plugin("gpt-4")
-
+def test_stopwords():
+    with Steamship.temporary_workspace() as steamship:
+        gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(steamship, blocks=
         [
             Block(text="You are an assistant who loves to count", tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
                   mime_type=MimeTypes.TXT),
             Block(text="1 2 3 4", tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)], mime_type=MimeTypes.TXT),
         ])
-
         generate_task = gpt4.generate(input_file_id=file.id, options={'stop':['6','7']})
         generate_task.wait()
         output = generate_task.output
-        print(output.blocks[0].text)
+        assert len(output.blocks) == 1
+        for block in output.blocks:
+            assert block.text.strip() == "5"
+            usage_found = False
+            for tag in block.tags:
+                if tag.kind == "token_usage":
+                    usage_found = True
+            assert usage_found
 

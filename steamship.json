@@ -30,7 +30,7 @@
 		},
 		"model": {
 			"type": "string",
-			"description": "The OpenAI model to use.  Can be a pre-existing fine-tuned model.",
+			"description": "The OpenAI model to use. Can be a pre-existing fine-tuned model.",
 			"default": "gpt-4"
 		},
 		"temperature": {
