@@ -1,9 +1,10 @@
-from steamship import Block, Tag, MimeTypes
+from steamship import Block, Tag, MimeTypes, SteamshipError
 from steamship.data.tags.tag_constants import TagKind, RoleTag
 from steamship.plugin.inputs.raw_block_and_tag_plugin_input import RawBlockAndTagPluginInput
 from steamship.plugin.request import PluginRequest
 
 from src.api import GPT4Plugin
+import pytest
 
 
 def test_generator():
@@ -51,3 +52,16 @@ def test_default_prompt():
     new_blocks = gpt4.run(PluginRequest(data=RawBlockAndTagPluginInput(blocks=blocks, options={'stop': '6'})))
     assert len(new_blocks.data.blocks) == 1
     assert new_blocks.data.blocks[0].text.strip() == "YIKES!"
+
+
+def test_flagged_prompt():
+    gpt4 = GPT4Plugin()
+
+    blocks = [
+        Block(text=" <Insert something super offensive here to run this test>", tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)], mime_type=MimeTypes.TXT),
+    ]
+
+    with pytest.raises(SteamshipError):
+        new_blocks = gpt4.run(PluginRequest(data=RawBlockAndTagPluginInput(blocks=blocks)))
+        assert len(new_blocks.data.blocks) == 1
+        assert new_blocks.data.blocks[0].text.strip() == "YIKES!"

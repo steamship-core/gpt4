@@ -146,7 +146,11 @@ class GPT4Plugin(Generator):
 
         return [Block(text=text, tags=tags) for text in texts]
 
-
+    @staticmethod
+    def _flagged(messages: List[Dict[str, str]]) -> bool:
+        input_text = "\n\n".join([value for role_dict in messages for value in role_dict.values()])
+        moderation = openai.Moderation.create(input=input_text)
+        return moderation['results'][0]['flagged']
 
     def run(
             self, request: PluginRequest[RawBlockAndTagPluginInput]
@@ -156,6 +160,8 @@ class GPT4Plugin(Generator):
         self.config.extend_with_dict(request.data.options, overwrite=True)
 
         messages = self.prepare_messages(request.data.blocks)
+        if self._flagged(messages):
+            raise SteamshipError("Sorry, this content is flagged as inappropriate by OpenAI.")
         user_id = self.context.user_id if self.context is not None else "testing"
         generated_blocks = self.generate_with_retry(messages=messages, user=user_id, options=request.data.options)
 
