@@ -32,7 +32,7 @@ from tenacity import (
 
 class GPT4Plugin(Generator):
     """
-    Plugin for generating images from text prompts from DALL-E.
+    Plugin for generating text using OpenAI's GPT-4 model.
     """
 
     class GPT4PluginConfig(Config):
@@ -133,11 +133,8 @@ class GPT4Plugin(Generator):
     def generate_with_retry(
         self, user: str, messages: List[Dict[str, str]], options: Dict
     ) -> (List[Block], List[UsageReport]):
-        """Use tenacity to retry the completion call."""
-
-        logging.info(f"Making OpenAI dall-e call on behalf of user with id: {user}")
         """Call the API to generate the next section of text."""
-
+        logging.info(f"Making OpenAI GPT-4 chat completion call on behalf of user with id: {user}")
         stopwords = options.get("stop", None) if options is not None else None
 
         @retry(
@@ -214,7 +211,7 @@ class GPT4Plugin(Generator):
     def run(
         self, request: PluginRequest[RawBlockAndTagPluginInput]
     ) -> InvocableResponse[RawBlockAndTagPluginOutput]:
-        """Run the image generator against all the text, combined"""
+        """Run the text generator against all the text, combined"""
 
         self.config.extend_with_dict(request.data.options, overwrite=True)
 
