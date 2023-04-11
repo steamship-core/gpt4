@@ -4,6 +4,7 @@ from steamship.plugin.inputs.raw_block_and_tag_plugin_input import (
     RawBlockAndTagPluginInput,
 )
 from steamship.plugin.request import PluginRequest
+from openai.error import InvalidRequestError
 
 from src.api import GPT4Plugin
 import pytest
@@ -101,3 +102,54 @@ def test_flagged_prompt():
         )
         assert len(new_blocks.data.blocks) == 1
         assert new_blocks.data.blocks[0].text.strip() == "YIKES!"
+
+
+def test_too_long_input():
+    gpt4 = GPT4Plugin()
+
+    blocks = [
+        Block(
+            text="token " * 9000,
+            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
+            mime_type=MimeTypes.TXT,
+        ),
+    ]
+
+    with pytest.raises(InvalidRequestError):
+        _ = gpt4.run(
+            PluginRequest(data=RawBlockAndTagPluginInput(blocks=blocks))
+        )
+
+
+def test_filtered_length():
+    gpt4 = GPT4Plugin()
+
+    blocks = [
+        Block(
+            text="token " * 1000,
+            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER),
+                  Tag(kind="num", name=str(i))],
+            mime_type=MimeTypes.TXT,
+        ) for i in range(10)
+    ]
+
+    # Expect 7 blocks, not 8, because each gets measured as 1001 since it ends with a space
+    assert len(gpt4.filter_blocks_for_prompt_length(blocks)) == 7
+
+def test_auto_filter_length():
+    gpt4 = GPT4Plugin(config={"auto_limit_prompt_length": True})
+
+    blocks = [
+        Block(
+            text="token " * 1000,
+            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER),
+                  Tag(kind="num", name=str(i))],
+            mime_type=MimeTypes.TXT,
+        ) for i in range(10)
+    ]
+
+    new_blocks = gpt4.run(
+        PluginRequest(data=RawBlockAndTagPluginInput(blocks=blocks))
+    )
+    assert len(new_blocks.data.blocks) == 1
+    assert "token" in new_blocks.data.blocks[0].text.strip()

@@ -1,7 +1,7 @@
 import json
 import logging
 from typing import Any, Dict, List, Optional, Type
-
+import tiktoken
 import openai
 from pydantic import Field
 from steamship import Steamship, Block, Tag, SteamshipError
@@ -87,6 +87,10 @@ class GPT4Plugin(Generator):
         default_system_prompt: str = Field(
             "", description="System prompt that will be prepended before every request"
         )
+        auto_limit_prompt_length: bool = Field(False, description="""Whether or not to automatically cut the input window to stay under the maximum tokens per model. 
+                                                                     If yes, the plugin will preserve blocks with SYSTEM role and as much of the most recent content
+                                                                     as possible. An error may still be thrown if the SYSTEM role content length exceeds the maximum.""")
+
 
     @classmethod
     def config_cls(cls) -> Type[Config]:
@@ -115,6 +119,9 @@ class GPT4Plugin(Generator):
         return {"role": role, "content": block.text}
 
     def prepare_messages(self, blocks: List[Block]) -> List[Dict[str, str]]:
+        if self.config.auto_limit_prompt_length:
+            blocks = self.filter_blocks_for_prompt_length(blocks)
+
         messages = []
         if self.config.default_system_prompt != "":
             messages.append(
@@ -129,6 +136,66 @@ class GPT4Plugin(Generator):
             ]
         )
         return messages
+
+    def max_tokens_for_model(self) -> int:
+        if self.config.model == "gpt-4":
+            return 8000
+        elif self.config.model == "gpt-4-32k":
+            return 32000
+        else:
+            return 4097
+
+
+    def block_role(self, block: Block) -> RoleTag:
+        for tag in block.tags:
+            if tag.kind == TagKind.ROLE:
+                return RoleTag(tag.name)
+
+    def token_length(self, block: Block) -> int:
+        """Calculate num tokens with tiktoken package."""
+        encoder = "p50k_base"
+        # create a GPT-3 encoder instance
+        enc = tiktoken.get_encoding(encoder)
+        # encode the text using the GPT-3 encoder
+        tokenized_text = enc.encode(block.text)
+        # calculate the number of tokens in the encoded text
+        return len(tokenized_text)
+
+    def filter_blocks_for_prompt_length(self, blocks: List[Block]):
+
+        max_tokens = self.max_tokens_for_model()
+
+        retained_blocks = []
+        total_length = 0
+
+        # Keep all system blocks
+        for block in blocks:
+            if self.block_role(block) == RoleTag.SYSTEM:
+                retained_blocks.append(block)
+                total_length += self.token_length(block)
+
+        # If system blocks are too long, throw error
+        if total_length > max_tokens:
+            raise SteamshipError(f"Plugin attempted to filter input to fit into {max_tokens} tokens, but the total size of system blocks was {total_length}")
+
+        # Now work backwards and keep as many blocks as we can
+        num_system_blocks = len(retained_blocks)
+        for block in reversed(blocks):
+            if self.block_role(block) != RoleTag.SYSTEM and total_length < max_tokens:
+                block_length = self.token_length(block)
+                if block_length + total_length < max_tokens:
+                    retained_blocks.append(block)
+                    total_length += block_length
+
+        # If we didn't add any non-system blocks, throw error
+        if len(retained_blocks) == num_system_blocks:
+            raise SteamshipError(
+                f"Plugin attempted to filter input to fit into {max_tokens} tokens, but no non-System blocks remained.")
+
+        return [block for block in blocks if block in retained_blocks]
+
+
+
 
     def generate_with_retry(
         self, user: str, messages: List[Dict[str, str]], options: Dict
@@ -171,7 +238,7 @@ class GPT4Plugin(Generator):
         texts = [choice["message"]["content"] for choice in openai_result["choices"]]
 
         # for token usage tracking, we need to include not just the token usage, but also completion id
-        # that will allow proper usage aggregration for n > 1 cases
+        # that will allow proper usage aggregation for n > 1 cases
         usage = openai_result["usage"]
         usage["completion_id"] = openai_result["id"]
 
