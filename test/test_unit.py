@@ -10,7 +10,7 @@ import pytest
 
 
 def test_generator():
-    gpt4 = GPT4Plugin(config={"n": 4})
+    gpt4 = GPT4Plugin(config={'openai_api_key':"", "n": 4})
 
     blocks = [
         Block(
@@ -35,7 +35,7 @@ def test_generator():
 
 
 def test_stopwords():
-    gpt4 = GPT4Plugin()
+    gpt4 = GPT4Plugin(config={'openai_api_key':""})
 
     blocks = [
         Block(
@@ -62,6 +62,7 @@ def test_stopwords():
 def test_default_prompt():
     gpt4 = GPT4Plugin(
         config={
+            'openai_api_key': "",
             "default_system_prompt": "You are very silly and are afraid of numbers. When you see "
             "them you scream: 'YIKES!'"
         }
@@ -85,7 +86,7 @@ def test_default_prompt():
 
 
 def test_flagged_prompt():
-    gpt4 = GPT4Plugin()
+    gpt4 = GPT4Plugin(config={'openai_api_key':""})
 
     blocks = [
         Block(
@@ -101,3 +102,10 @@ def test_flagged_prompt():
         )
         assert len(new_blocks.data.blocks) == 1
         assert new_blocks.data.blocks[0].text.strip() == "YIKES!"
+
+def test_invalid_model_for_billing():
+
+    with pytest.raises(SteamshipError) as e:
+        _ = GPT4Plugin(config={'model': 'a model that does not exist', 'openai_api_key':""})
+        assert "This plugin cannot be used with model" in str(e)
+
