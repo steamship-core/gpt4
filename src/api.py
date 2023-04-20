@@ -29,6 +29,7 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
+VALID_MODELS_FOR_BILLING = ['gpt-4', 'gpt-3.5-turbo']
 
 class GPT4Plugin(Generator):
     """
@@ -100,8 +101,13 @@ class GPT4Plugin(Generator):
         config: Dict[str, Any] = None,
         context: InvocationContext = None,
     ):
+        # Load original api key before it is read from TOML, so we know to restrict models for billing
+        original_api_key = config['openai_api_key']
         super().__init__(client, config, context)
+        if original_api_key == "" and self.config.model not in VALID_MODELS_FOR_BILLING:
+            raise SteamshipError(f"This plugin cannot be used with model {self.config.model} while using Steamship's API key. Valid models are {VALID_MODELS_FOR_BILLING}")
         openai.api_key = self.config.openai_api_key
+
 
     def prepare_message(self, block: Block) -> Dict[str, str]:
         role = None
