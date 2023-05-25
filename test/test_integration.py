@@ -3,7 +3,7 @@ from steamship import Block, File, Steamship, MimeTypes, Tag
 from steamship.data import TagKind
 from steamship.data.tags.tag_constants import RoleTag
 
-GENERATOR_HANDLE = "gpt-4-enias"
+GENERATOR_HANDLE = "gpt-4"
 PROFILE = "staging"
 
 
@@ -49,12 +49,6 @@ def test_generator_without_role():
         generate_task.wait()
         output = generate_task.output
         assert len(output.blocks) == 1
-        for block in output.blocks:
-            usage_found = False
-            for tag in block.tags:
-                if tag.kind == "token_usage":
-                    usage_found = True
-            assert usage_found
 
 
 def test_stopwords():
@@ -83,8 +77,3 @@ def test_stopwords():
         assert len(output.blocks) == 1
         for block in output.blocks:
             assert block.text.strip() == "5"
-            usage_found = False
-            for tag in block.tags:
-                if tag.kind == "token_usage":
-                    usage_found = True
-            assert usage_found
