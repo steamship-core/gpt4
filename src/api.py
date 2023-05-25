@@ -153,6 +153,7 @@ class GPT4Plugin(Generator):
                 | retry_if_exception_type(openai.error.APIError)
                 | retry_if_exception_type(openai.error.APIConnectionError)
                 | retry_if_exception_type(openai.error.RateLimitError)
+                | retry_if_exception_type(ConnectionError)  # handle 104s that manifest as ConnectionResetError
             ),
             after=after_log(logging.root, logging.INFO),
         )
