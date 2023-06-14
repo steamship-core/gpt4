@@ -107,6 +107,59 @@ def test_functions():
     assert "function_call" in function_call
 
 
+def test_functions_function_message():
+    gpt4 = GPT4Plugin(
+        config={"openai_api_key": "", "model": "gpt-3.5-turbo-0613"},
+    )
+
+    blocks = [
+        Block(
+            text="You are a helpful AI assistant.",
+            tags=[Tag(kind="role", name="system")],
+        ),
+        Block(
+            text="Who is Vin Diesel's girlfriend? What is her current age raised to the 0.43 power?",
+            tags=[Tag(kind="role", name="user")],
+        ),
+        Block(
+            text='{"function_call": {"name": "Search", "arguments": "{\\n  \\"__arg1\\": \\"Vin Diesel\'s girlfriend\\"\\n}"}}',
+            tags=[Tag(kind="role", name="assistant")],
+        ),
+        Block(
+            text="Paloma Jiménez",
+            tags=[Tag(kind="role", name="function"), Tag(kind="name", name="Search")],
+        ),
+    ]
+
+    new_blocks = gpt4.run(
+        PluginRequest(
+            data=RawBlockAndTagPluginInput(
+                blocks=blocks,
+                options={
+                    "functions": [
+                        {
+                            "name": "Search",
+                            "description": "useful for when you need to answer questions about current events. You should ask targeted questions",
+                            "parameters": {
+                                "properties": {
+                                    "query": {"title": "query", "type": "string"}
+                                },
+                                "required": ["query"],
+                                "type": "object",
+                            },
+                        }
+                    ]
+                },
+            )
+        )
+    )
+    assert len(new_blocks.data.blocks) == 1
+    assert new_blocks.data.blocks[0].text is not None
+    assert isinstance(new_blocks.data.blocks[0].text, str)
+    text = new_blocks.data.blocks[0].text.strip()
+    assert "Vin Diesel" in text
+
+
 def test_default_prompt():
     gpt4 = GPT4Plugin(
         config={

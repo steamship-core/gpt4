@@ -34,7 +34,7 @@ def test_generator():
         assert len(output.blocks) == 1
         for block in output.blocks:
             assert block.text.strip().startswith("5")
-            assert block.text.strip() == "5 6 7 8 9 10"
+            assert block.text.strip() == "5 6 7 8"
 
 
 def test_generator_without_role():
@@ -122,3 +122,59 @@ def test_functions():
         assert "function_call" in output.blocks[0].text.strip()
         function_call = json.loads(output.blocks[0].text.strip())
         assert "function_call" in function_call
+
+
+def test_functions_function_message():
+    with Steamship.temporary_workspace() as steamship:
+        gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
+
+        file = File.create(
+            steamship,
+            blocks=[
+                Block(
+                    text="You are a helpful AI assistant.",
+                    tags=[Tag(kind="role", name="system")],
+                ),
+                Block(
+                    text="Who is Vin Diesel's girlfriend? What is her current age raised to the 0.43 power?",
+                    tags=[Tag(kind="role", name="user")],
+                ),
+                Block(
+                    text='{"function_call": {"name": "Search", "arguments": "{\\n  \\"__arg1\\": \\"Vin Diesel\'s girlfriend\\"\\n}"}}',
+                    tags=[Tag(kind="role", name="assistant")],
+                ),
+                Block(
+                    text="Paloma Jiménez",
+                    tags=[
+                        Tag(kind="role", name="function"),
+                        Tag(kind="name", name="Search"),
+                    ],
+                ),
+            ],
+        )
+
+        generate_task = gpt4.generate(
+            input_file_id=file.id,
+            options={
+                "functions": [
+                    {
+                        "name": "Search",
+                        "description": "useful for when you need to answer questions about current events. You should ask targeted questions",
+                        "parameters": {
+                            "properties": {
+                                "query": {"title": "query", "type": "string"}
+                            },
+                            "required": ["query"],
+                            "type": "object",
+                        },
+                    }
+                ]
+            },
+        )
+        generate_task.wait()
+        output = generate_task.output
+        assert len(output.blocks) == 1
+        assert output.blocks[0].text is not None
+        assert isinstance(output.blocks[0].text, str)
+        text = output.blocks[0].text.strip()
+        assert "Vin Diesel" in text

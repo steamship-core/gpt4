@@ -1,7 +1,7 @@
 {
 	"type": "plugin",
-	"handle": "gpt-4",
-	"version": "0.0.9",
+	"handle": "gpttest",
+	"version": "0.0.10",
 	"description": "",
 	"author": "dave",
 	"entrypoint": "Unused",

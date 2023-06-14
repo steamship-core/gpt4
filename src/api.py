@@ -118,14 +118,22 @@ class GPT4Plugin(Generator):
 
     def prepare_message(self, block: Block) -> Dict[str, str]:
         role = None
+        name = None
         for tag in block.tags:
             if tag.kind == TagKind.ROLE:
                 role = tag.name
 
+            if tag.kind == "name":
+                name = tag.name
+
         if role is None:
             role = self.config.default_role
 
-        return {"role": role, "content": block.text}
+        if name:
+
+            return {"role": role, "content": block.text, "name": name}
+        else:
+            return {"role": role, "content": block.text}
 
     def prepare_messages(self, blocks: List[Block]) -> List[Dict[str, str]]:
         messages = []
