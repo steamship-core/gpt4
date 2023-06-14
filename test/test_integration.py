@@ -136,7 +136,7 @@ def test_functions_function_message():
                     tags=[Tag(kind="role", name="system")],
                 ),
                 Block(
-                    text="Who is Vin Diesel's girlfriend? What is her current age raised to the 0.43 power?",
+                    text="Who is Vin Diesel's girlfriend?",
                     tags=[Tag(kind="role", name="user")],
                 ),
                 Block(
