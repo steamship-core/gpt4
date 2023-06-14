@@ -5,12 +5,11 @@ from steamship import Block, File, Steamship, MimeTypes, Tag
 from steamship.data import TagKind
 from steamship.data.tags.tag_constants import RoleTag
 
-GENERATOR_HANDLE = "gpttest"
-PROFILE = "staging"
+GENERATOR_HANDLE = "gpt-4"
 
 
 def test_generator():
-    with Steamship.temporary_workspace(profile=PROFILE) as steamship:
+    with Steamship.temporary_workspace() as steamship:
         gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
         print(gpt4)
         file = File.create(
@@ -39,7 +38,7 @@ def test_generator():
 
 
 def test_generator_without_role():
-    with Steamship.temporary_workspace(profile=PROFILE) as steamship:
+    with Steamship.temporary_workspace() as steamship:
         gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(
             steamship,
@@ -54,7 +53,7 @@ def test_generator_without_role():
 
 
 def test_stopwords():
-    with Steamship.temporary_workspace(profile=PROFILE) as steamship:
+    with Steamship.temporary_workspace() as steamship:
         gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(
             steamship,
@@ -82,7 +81,7 @@ def test_stopwords():
 
 
 def test_functions():
-    with Steamship.temporary_workspace(profile=PROFILE) as steamship:
+    with Steamship.temporary_workspace() as steamship:
         gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(
             steamship,

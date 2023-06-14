@@ -1,6 +1,6 @@
 {
 	"type": "plugin",
-	"handle": "gpttest",
+	"handle": "gpt-4",
 	"version": "0.0.9",
 	"description": "",
 	"author": "dave",
