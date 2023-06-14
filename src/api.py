@@ -31,9 +31,13 @@ from tenacity import (
 
 VALID_MODELS_FOR_BILLING = [
     "gpt-4",
-    "gpt-4-turbo-0613",
-    "gpt-3.5-turbo-0613",
+    "gpt-4-0314",
+    "gpt-4-0613",
     "gpt-3.5-turbo",
+    "gpt-3.5-turbo-0613",
+    "gpt-3.5-turbo-16k"
+    "gpt-3.5-turbo-16k-0613",
+
 ]
 
 
@@ -52,28 +56,33 @@ class GPT4Plugin(Generator):
             description="The maximum number of tokens to generate per request. Can be overridden in runtime options.",
         )
         model: Optional[str] = Field(
-            "gpt-3.5-turbo-0613",
+            "gpt-4-0613",
             description="The OpenAI model to use. Can be a pre-existing fine-tuned model.",
         )
         temperature: Optional[float] = Field(
             0.4,
-            description="Controls randomness. Lower values produce higher likelihood / more predictable results; higher values produce more variety. Values between 0-1.",
+            description="Controls randomness. Lower values produce higher likelihood / more predictable results; "
+                        "higher values produce more variety. Values between 0-1.",
         )
         top_p: Optional[int] = Field(
             1,
-            description="Controls the nucleus sampling, where the model considers the results of the tokens with top_p probability mass. Values between 0-1.",
+            description="Controls the nucleus sampling, where the model considers the results of the tokens with "
+                        "top_p probability mass. Values between 0-1.",
         )
         presence_penalty: Optional[int] = Field(
             0,
-            description="Control how likely the model will reuse words. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics. Number between -2.0 and 2.0.",
+            description="Control how likely the model will reuse words. Positive values penalize new tokens based on "
+                        "whether they appear in the text so far, increasing the model's likelihood to talk about new topics. Number between -2.0 and 2.0.",
         )
         frequency_penalty: Optional[int] = Field(
             0,
-            description="Control how likely the model will reuse words. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim. Number between -2.0 and 2.0.",
+            description="Control how likely the model will reuse words. Positive values penalize new tokens based on "
+                        "their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim. Number between -2.0 and 2.0.",
         )
         moderate_output: bool = Field(
             True,
-            description="Pass the generated output back through OpenAI's moderation endpoint and throw an exception if flagged.",
+            description="Pass the generated output back through OpenAI's moderation endpoint and throw an exception "
+                        "if flagged.",
         )
         max_retries: int = Field(
             8, description="Maximum number of retries to make when generating."
@@ -102,10 +111,10 @@ class GPT4Plugin(Generator):
     config: GPT4PluginConfig
 
     def __init__(
-        self,
-        client: Steamship = None,
-        config: Dict[str, Any] = None,
-        context: InvocationContext = None,
+            self,
+            client: Steamship = None,
+            config: Dict[str, Any] = None,
+            context: InvocationContext = None,
     ):
         # Load original api key before it is read from TOML, so we know to restrict models for billing
         original_api_key = config["openai_api_key"]
@@ -152,7 +161,7 @@ class GPT4Plugin(Generator):
         return messages
 
     def generate_with_retry(
-        self, user: str, messages: List[Dict[str, str]], options: Dict
+            self, user: str, messages: List[Dict[str, str]], options: Dict
     ) -> (List[Block], List[UsageReport]):
         """Call the API to generate the next section of text."""
         logging.info(
@@ -168,13 +177,13 @@ class GPT4Plugin(Generator):
             wait=wait_exponential_jitter(jitter=5),
             before_sleep=before_sleep_log(logging.root, logging.INFO),
             retry=(
-                retry_if_exception_type(openai.error.Timeout)
-                | retry_if_exception_type(openai.error.APIError)
-                | retry_if_exception_type(openai.error.APIConnectionError)
-                | retry_if_exception_type(openai.error.RateLimitError)
-                | retry_if_exception_type(
-                    ConnectionError
-                )  # handle 104s that manifest as ConnectionResetError
+                    retry_if_exception_type(openai.error.Timeout)
+                    | retry_if_exception_type(openai.error.APIError)
+                    | retry_if_exception_type(openai.error.APIConnectionError)
+                    | retry_if_exception_type(openai.error.RateLimitError)
+                    | retry_if_exception_type(
+                ConnectionError
+            )  # handle 104s that manifest as ConnectionResetError
             ),
             after=after_log(logging.root, logging.INFO),
         )
@@ -233,14 +242,14 @@ class GPT4Plugin(Generator):
         ]
 
         return [
-            Block(
-                text=text,
-                tags=[
-                    Tag(kind=TagKind.ROLE, name=RoleTag(role)),
-                ],
-            )
-            for text, role in generations
-        ], usage_reports
+                   Block(
+                       text=text,
+                       tags=[
+                           Tag(kind=TagKind.ROLE, name=RoleTag(role)),
+                       ],
+                   )
+                   for text, role in generations
+               ], usage_reports
 
     @staticmethod
     def _flagged(messages: List[Dict[str, str]]) -> bool:
@@ -251,7 +260,7 @@ class GPT4Plugin(Generator):
         return moderation["results"][0]["flagged"]
 
     def run(
-        self, request: PluginRequest[RawBlockAndTagPluginInput]
+            self, request: PluginRequest[RawBlockAndTagPluginInput]
     ) -> InvocableResponse[RawBlockAndTagPluginOutput]:
         """Run the text generator against all the text, combined"""
 
