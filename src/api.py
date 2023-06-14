@@ -29,7 +29,13 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-VALID_MODELS_FOR_BILLING = ['gpt-4', 'gpt-3.5-turbo']
+VALID_MODELS_FOR_BILLING = [
+    "gpt-4",
+    "gpt-4-turbo-0613",
+    "gpt-3.5-turbo-0613",
+    "gpt-3.5-turbo",
+]
+
 
 class GPT4Plugin(Generator):
     """
@@ -46,7 +52,7 @@ class GPT4Plugin(Generator):
             description="The maximum number of tokens to generate per request. Can be overridden in runtime options.",
         )
         model: Optional[str] = Field(
-            "gpt-4",
+            "gpt-3.5-turbo-0613",
             description="The OpenAI model to use. Can be a pre-existing fine-tuned model.",
         )
         temperature: Optional[float] = Field(
@@ -102,12 +108,13 @@ class GPT4Plugin(Generator):
         context: InvocationContext = None,
     ):
         # Load original api key before it is read from TOML, so we know to restrict models for billing
-        original_api_key = config['openai_api_key']
+        original_api_key = config["openai_api_key"]
         super().__init__(client, config, context)
         if original_api_key == "" and self.config.model not in VALID_MODELS_FOR_BILLING:
-            raise SteamshipError(f"This plugin cannot be used with model {self.config.model} while using Steamship's API key. Valid models are {VALID_MODELS_FOR_BILLING}")
+            raise SteamshipError(
+                f"This plugin cannot be used with model {self.config.model} while using Steamship's API key. Valid models are {VALID_MODELS_FOR_BILLING}"
+            )
         openai.api_key = self.config.openai_api_key
-
 
     def prepare_message(self, block: Block) -> Dict[str, str]:
         role = None
@@ -140,8 +147,12 @@ class GPT4Plugin(Generator):
         self, user: str, messages: List[Dict[str, str]], options: Dict
     ) -> (List[Block], List[UsageReport]):
         """Call the API to generate the next section of text."""
-        logging.info(f"Making OpenAI GPT-4 chat completion call on behalf of user with id: {user}")
-        stopwords = options.get("stop", None) if options is not None else None
+        logging.info(
+            f"Making OpenAI GPT-4 chat completion call on behalf of user with id: {user}"
+        )
+        options = options or {}
+        stopwords = options.get("stop", None)
+        functions = options.get("functions", None)
 
         @retry(
             reraise=True,
@@ -153,12 +164,14 @@ class GPT4Plugin(Generator):
                 | retry_if_exception_type(openai.error.APIError)
                 | retry_if_exception_type(openai.error.APIConnectionError)
                 | retry_if_exception_type(openai.error.RateLimitError)
-                | retry_if_exception_type(ConnectionError)  # handle 104s that manifest as ConnectionResetError
+                | retry_if_exception_type(
+                    ConnectionError
+                )  # handle 104s that manifest as ConnectionResetError
             ),
             after=after_log(logging.root, logging.INFO),
         )
         def _generate_with_retry() -> Any:
-            return openai.ChatCompletion.create(
+            kwargs = dict(
                 model=self.config.model,
                 messages=messages,
                 user=user,
@@ -167,7 +180,12 @@ class GPT4Plugin(Generator):
                 max_tokens=self.config.max_tokens,
                 stop=stopwords,
                 n=self.config.n,
+                temperature=self.config.temperature,
             )
+            if functions:
+                kwargs = {**kwargs, "functions": functions}
+
+            return openai.ChatCompletion.create(**kwargs)
 
         openai_result = _generate_with_retry()
         logging.info(
@@ -175,7 +193,16 @@ class GPT4Plugin(Generator):
         )
 
         # Fetch text from responses
-        texts = [choice["message"]["content"] for choice in openai_result["choices"]]
+        generations = []
+        for choice in openai_result["choices"]:
+            message = choice["message"]
+            role = message["role"]
+            if function_call := message.get("function_call"):
+                content = json.dumps({"function_call": function_call})
+            else:
+                content = message.get("content", "")
+
+            generations.append((content, role))
 
         # for token usage tracking, we need to include not just the token usage, but also completion id
         # that will allow proper usage aggregration for n > 1 cases
@@ -201,10 +228,10 @@ class GPT4Plugin(Generator):
             Block(
                 text=text,
                 tags=[
-                    Tag(kind=TagKind.ROLE, name=RoleTag.ASSISTANT),
+                    Tag(kind=TagKind.ROLE, name=RoleTag(role)),
                 ],
             )
-            for text in texts
+            for text, role in generations
         ], usage_reports
 
     @staticmethod

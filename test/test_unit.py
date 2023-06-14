@@ -1,3 +1,6 @@
+import json
+
+import pytest
 from steamship import Block, Tag, MimeTypes, SteamshipError
 from steamship.data.tags.tag_constants import TagKind, RoleTag
 from steamship.plugin.inputs.raw_block_and_tag_plugin_input import (
@@ -6,11 +9,10 @@ from steamship.plugin.inputs.raw_block_and_tag_plugin_input import (
 from steamship.plugin.request import PluginRequest
 
 from src.api import GPT4Plugin
-import pytest
 
 
 def test_generator():
-    gpt4 = GPT4Plugin(config={'openai_api_key':"", "n": 4})
+    gpt4 = GPT4Plugin(config={"openai_api_key": "", "n": 4})
 
     blocks = [
         Block(
@@ -19,7 +21,7 @@ def test_generator():
             mime_type=MimeTypes.TXT,
         ),
         Block(
-            text="1 2 3 4",
+            text="Continue this series: 1 2 3 4",
             tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
             mime_type=MimeTypes.TXT,
         ),
@@ -28,14 +30,14 @@ def test_generator():
     new_blocks = gpt4.run(PluginRequest(data=RawBlockAndTagPluginInput(blocks=blocks)))
     assert len(new_blocks.data.blocks) == 4
     for block in new_blocks.data.blocks:
-        assert block.text.strip().startswith("5 6 7 8 9 10")
+        assert block.text.strip().startswith("5 6 7 8")
 
     assert new_blocks.data.usage is not None
     assert len(new_blocks.data.usage) == 2
 
 
 def test_stopwords():
-    gpt4 = GPT4Plugin(config={'openai_api_key':""})
+    gpt4 = GPT4Plugin(config={"openai_api_key": ""})
 
     blocks = [
         Block(
@@ -44,7 +46,7 @@ def test_stopwords():
             mime_type=MimeTypes.TXT,
         ),
         Block(
-            text="1 2 3 4",
+            text="Continue this series: 1 2 3 4",
             tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
             mime_type=MimeTypes.TXT,
         ),
@@ -59,12 +61,58 @@ def test_stopwords():
     assert new_blocks.data.blocks[0].text.strip() == "5"
 
 
+def test_functions():
+    gpt4 = GPT4Plugin(
+        config={"openai_api_key": "", "model": "gpt-3.5-turbo-0613"},
+    )
+
+    blocks = [
+        Block(
+            text="You are a helpful AI assistant.",
+            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
+            mime_type=MimeTypes.TXT,
+        ),
+        Block(
+            text="Search for the weather of today",
+            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
+            mime_type=MimeTypes.TXT,
+        ),
+    ]
+
+    new_blocks = gpt4.run(
+        PluginRequest(
+            data=RawBlockAndTagPluginInput(
+                blocks=blocks,
+                options={
+                    "functions": [
+                        {
+                            "name": "Search",
+                            "description": "useful for when you need to answer questions about current events. You should ask targeted questions",
+                            "parameters": {
+                                "properties": {
+                                    "query": {"title": "query", "type": "string"}
+                                },
+                                "required": ["query"],
+                                "type": "object",
+                            },
+                        }
+                    ]
+                },
+            )
+        )
+    )
+    assert len(new_blocks.data.blocks) == 1
+    assert "function_call" in new_blocks.data.blocks[0].text.strip()
+    function_call = json.loads(new_blocks.data.blocks[0].text.strip())
+    assert "function_call" in function_call
+
+
 def test_default_prompt():
     gpt4 = GPT4Plugin(
         config={
-            'openai_api_key': "",
+            "openai_api_key": "",
             "default_system_prompt": "You are very silly and are afraid of numbers. When you see "
-            "them you scream: 'YIKES!'"
+            "them you scream: 'YIKES!'",
         }
     )
 
@@ -86,7 +134,7 @@ def test_default_prompt():
 
 
 def test_flagged_prompt():
-    gpt4 = GPT4Plugin(config={'openai_api_key':""})
+    gpt4 = GPT4Plugin(config={"openai_api_key": ""})
 
     blocks = [
         Block(
@@ -103,9 +151,10 @@ def test_flagged_prompt():
         assert len(new_blocks.data.blocks) == 1
         assert new_blocks.data.blocks[0].text.strip() == "YIKES!"
 
+
 def test_invalid_model_for_billing():
-
     with pytest.raises(SteamshipError) as e:
-        _ = GPT4Plugin(config={'model': 'a model that does not exist', 'openai_api_key':""})
+        _ = GPT4Plugin(
+            config={"model": "a model that does not exist", "openai_api_key": ""}
+        )
         assert "This plugin cannot be used with model" in str(e)
-
