@@ -1,7 +1,7 @@
 {
 	"type": "plugin",
 	"handle": "gpt-4",
-	"version": "0.0.8",
+	"version": "0.0.11",
 	"description": "",
 	"author": "dave",
 	"entrypoint": "Unused",
@@ -31,7 +31,7 @@
 		"model": {
 			"type": "string",
 			"description": "The OpenAI model to use. Can be a pre-existing fine-tuned model.",
-			"default": "gpt-4"
+			"default": "gpt-4-0613"
 		},
 		"temperature": {
 			"type": "number",
