@@ -92,7 +92,7 @@ def test_functions():
                     mime_type=MimeTypes.TXT,
                 ),
                 Block(
-                    text="Search for the weather of today",
+                    text="Search for the weather of today in Berlin",
                     tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
                     mime_type=MimeTypes.TXT,
                 ),

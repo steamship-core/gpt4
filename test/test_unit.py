@@ -12,7 +12,7 @@ from src.api import GPT4Plugin
 
 
 def test_generator():
-    gpt4 = GPT4Plugin(config={"openai_api_key": "", "n": 4})
+    gpt4 = GPT4Plugin(config={"n": 4})
 
     blocks = [
         Block(
@@ -37,7 +37,7 @@ def test_generator():
 
 
 def test_stopwords():
-    gpt4 = GPT4Plugin(config={"openai_api_key": ""})
+    gpt4 = GPT4Plugin(config={})
 
     blocks = [
         Block(
@@ -63,7 +63,7 @@ def test_stopwords():
 
 def test_functions():
     gpt4 = GPT4Plugin(
-        config={"openai_api_key": "", "model": "gpt-3.5-turbo-0613"},
+        config={},
     )
 
     blocks = [
@@ -73,7 +73,7 @@ def test_functions():
             mime_type=MimeTypes.TXT,
         ),
         Block(
-            text="Search for the weather of today",
+            text="Search for the weather of today in Berlin",
             tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
             mime_type=MimeTypes.TXT,
         ),
@@ -109,7 +109,7 @@ def test_functions():
 
 def test_functions_function_message():
     gpt4 = GPT4Plugin(
-        config={"openai_api_key": "", "model": "gpt-3.5-turbo-0613"},
+        config={},
     )
 
     blocks = [
@@ -118,7 +118,7 @@ def test_functions_function_message():
             tags=[Tag(kind="role", name="system")],
         ),
         Block(
-            text="Who is Vin Diesel's girlfriend? What is her current age raised to the 0.43 power?",
+            text="Who is Vin Diesel's girlfriend?",
             tags=[Tag(kind="role", name="user")],
         ),
         Block(
