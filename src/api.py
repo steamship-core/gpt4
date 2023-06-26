@@ -138,7 +138,6 @@ class GPT4Plugin(Generator):
             role = self.config.default_role
 
         if name:
-
             return {"role": role, "content": block.text, "name": name}
         else:
             return {"role": role, "content": block.text}
