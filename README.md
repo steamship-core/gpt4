@@ -30,8 +30,5 @@ for block in task.output.blocks:
 
 ### Cost
 
-| Cost                          |
-|-------------------------------|
-| **Prompt**: $0.03/1000 tokens |
-| **Output**: $0.06/1000 tokens |
+[Pricing page](https://www.steamship.com/plugins/gpt-4?tab=Pricing)
 
