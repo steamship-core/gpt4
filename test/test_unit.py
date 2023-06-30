@@ -12,7 +12,7 @@ from src.api import GPT4Plugin
 
 
 def test_generator():
-    gpt4 = GPT4Plugin(config={"n": 4})
+    gpt4 = GPT4Plugin(config={"n": 4, "model": "gpt-4-32k"})
 
     blocks = [
         Block(
@@ -165,7 +165,8 @@ def test_default_prompt():
         config={
             "openai_api_key": "",
             "default_system_prompt": "You are very silly and are afraid of numbers. When you see "
-            "them you scream: 'YIKES!'",
+                                     "them you scream: 'YIKES!'",
+            "moderate_output": False
         }
     )
 
@@ -201,8 +202,6 @@ def test_flagged_prompt():
         new_blocks = gpt4.run(
             PluginRequest(data=RawBlockAndTagPluginInput(blocks=blocks))
         )
-        assert len(new_blocks.data.blocks) == 1
-        assert new_blocks.data.blocks[0].text.strip() == "YIKES!"
 
 
 def test_invalid_model_for_billing():
