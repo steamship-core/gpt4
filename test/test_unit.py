@@ -10,9 +10,11 @@ from steamship.plugin.request import PluginRequest
 
 from src.api import GPT4Plugin
 
-
-def test_generator():
-    gpt4 = GPT4Plugin(config={"n": 4, "model": "gpt-4-32k"})
+@pytest.mark.parametrize(
+    "model", ["", "gpt-4-32k"]
+)
+def test_generator(model:str):
+    gpt4 = GPT4Plugin(config={"n": 4, "model": model})
 
     blocks = [
         Block(

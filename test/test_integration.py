@@ -1,16 +1,20 @@
 """Test gpt-4 generation via integration tests."""
 import json
+from typing import Optional
 
+import pytest
 from steamship import Block, File, Steamship, MimeTypes, Tag
 from steamship.data import TagKind
 from steamship.data.tags.tag_constants import RoleTag
 
 GENERATOR_HANDLE = "gpt-4"
 
-
-def test_generator():
+@pytest.mark.parametrize(
+    "model", ["", "gpt-4-32k"]
+)
+def test_generator(model: str):
     with Steamship.temporary_workspace() as steamship:
-        gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
+        gpt4 = steamship.use_plugin(GENERATOR_HANDLE, config={"model": model})
         file = File.create(
             steamship,
             blocks=[
