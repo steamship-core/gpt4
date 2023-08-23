@@ -9,3 +9,4 @@ __pycache__/
 venv
 src/.steamship/secrets.toml
 /test/config.json
+.python-version
