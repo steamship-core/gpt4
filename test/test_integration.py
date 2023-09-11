@@ -5,7 +5,7 @@ from typing import Optional
 import pytest
 from steamship import Block, File, Steamship, MimeTypes, Tag
 from steamship.data import TagKind
-from steamship.data.tags.tag_constants import RoleTag
+from steamship.data.tags.tag_constants import RoleTag, TagValueKey
 
 GENERATOR_HANDLE = "gpt-4"
 
@@ -144,8 +144,14 @@ def test_multimodal_functions_with_blocks():
                     mime_type=MimeTypes.TXT,
                 ),
                 Block(
+                    text=json.dumps({"name": "generate_image", "arguments": "{ \"text\": \"sailboat\" }"}),
+                    tags=[Tag(kind=TagKind.ROLE, name=RoleTag.ASSISTANT),
+                          Tag(kind="function-selection", name="generate_image")],
+                    mime_type=MimeTypes.PNG,
+                ),
+                Block(
                     text="c2f6818c-233d-4426-9dc5-f3c28fa33068",
-                    tags=[Tag(kind=TagKind.ROLE, name="function"), Tag(kind="name", name="generate_image")],
+                    tags=[Tag(kind=TagKind.ROLE, name="function", value={TagValueKey.STRING_VALUE: "generate_image"})],
                     mime_type=MimeTypes.PNG,
                 ),
                 Block(
@@ -228,13 +234,14 @@ def test_functions_function_message():
                     tags=[Tag(kind="role", name="user")],
                 ),
                 Block(
-                    text='{"function_call": {"name": "Search", "arguments": "{\\n  \\"__arg1\\": \\"Vin Diesel\'s girlfriend\\"\\n}"}}',
-                    tags=[Tag(kind="role", name="assistant")],
+                    text=json.dumps({"name": "Search", "arguments": "{ \"query\": \"Vin Diesel\'s girlfriend\" }"}),
+                    tags=[Tag(kind=TagKind.ROLE, name=RoleTag.ASSISTANT),
+                          Tag(kind="function-selection", name="Search")],
                 ),
                 Block(
                     text="Paloma Jiménez",
                     tags=[
-                        Tag(kind="role", name="function"),
+                        Tag(kind="role", name="function"),  # legacy method left for testing / backwards compat
                         Tag(kind="name", name="Search"),
                     ],
                 ),
