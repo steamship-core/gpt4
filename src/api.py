@@ -249,11 +249,11 @@ class GPT4Plugin(StreamingGenerator):
                     )
                 if text_chunk := chunk_message.get("content"):
                     output_block.append_stream(bytes(text_chunk, encoding="utf-8"))
-                    output_texts[block_index].append(text_chunk)
+                    output_texts[block_index] += text_chunk
                 if function_call := chunk_message.get("function_call"):
                     function_output = json.dumps({"function_call": function_call})
                     output_block.append_stream(bytes(function_output, encoding="utf-8"))
-                    output_texts[block_index].append(function_output)
+                    output_texts[block_index] += function_output
 
         for output_block in output_blocks:
             output_block.finish_stream()
