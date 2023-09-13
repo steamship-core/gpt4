@@ -232,6 +232,9 @@ class GPT4Plugin(StreamingGenerator):
         ]
         # iterate through the stream of events
         completion_id = ""
+        returned_function_parts = [  # did each result return a function
+            [] for _ in range(self.config.n)
+        ]
         for chunk in openai_result:
             if id := chunk.get("id"):
                 completion_id = id
@@ -251,9 +254,19 @@ class GPT4Plugin(StreamingGenerator):
                     output_block.append_stream(bytes(text_chunk, encoding="utf-8"))
                     output_texts[block_index] += text_chunk
                 if function_call := chunk_message.get("function_call"):
-                    function_output = json.dumps({"function_call": function_call})
-                    output_block.append_stream(bytes(function_output, encoding="utf-8"))
-                    output_texts[block_index] += function_output
+                    returned_function_parts[block_index].append(function_call)
+
+        for i, block_returned_function_parts in enumerate(returned_function_parts):
+            if len(block_returned_function_parts) > 0:
+                function_call = self._reassemble_function_call(
+                    block_returned_function_parts
+                )
+                output_texts[i] = json.dumps(function_call)
+                output_blocks[i].append_stream(
+                    bytes(
+                        json.dumps({"function_call": function_call}), encoding="utf-8"
+                    )
+                )
 
         for output_block in output_blocks:
             output_block.finish_stream()
@@ -261,6 +274,15 @@ class GPT4Plugin(StreamingGenerator):
         usage_reports = self._calculate_usage(messages, output_texts, completion_id)
 
         return usage_reports
+
+    def _reassemble_function_call(self, function_call_chunks: List[dict]) -> dict:
+        result = {}
+        for chunk in function_call_chunks:
+            for key in chunk.keys():
+                if key not in result:
+                    result[key] = ""
+                result[key] += chunk[key]
+        return result
 
     def _calculate_usage(
         self,
