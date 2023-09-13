@@ -4,6 +4,7 @@ import time
 from typing import Any, Dict, List, Optional, Type
 
 import openai
+import tiktoken
 from pydantic import Field
 from steamship import Steamship, Block, Tag, SteamshipError, MimeTypes
 from steamship.data.tags.tag_constants import TagKind, RoleTag
@@ -226,15 +227,18 @@ class GPT4Plugin(StreamingGenerator):
             "Retry statistics: " + json.dumps(_generate_with_retry.retry.statistics)
         )
 
+        output_texts = [  # Collect output text for usage counting
+            "" for _ in range(self.config.n)
+        ]
         # iterate through the stream of events
-        total_block_append_time = 0
+        completion_id = ""
         for chunk in openai_result:
-            chunk_time = (
-                time.time() - start_time
-            )  # calculate the time delay of the chunk
+            if id := chunk.get("id"):
+                completion_id = id
             for chunk_choice in chunk["choices"]:
                 chunk_message = chunk_choice["delta"]  # extract the message
-                output_block = output_blocks[chunk_choice["index"]]
+                block_index = chunk_choice["index"]
+                output_block = output_blocks[block_index]
                 if role := chunk_message.get("role"):
                     Tag.create(
                         self.client,
@@ -244,61 +248,47 @@ class GPT4Plugin(StreamingGenerator):
                         name=RoleTag(role),
                     )
                 if text_chunk := chunk_message.get("content"):
-                    append_block_start = time.time()
                     output_block.append_stream(bytes(text_chunk, encoding="utf-8"))
-                    block_append_time = time.time() - append_block_start
-                    print(f"Block append time {block_append_time}")
-                    total_block_append_time += block_append_time
-                # print(
-                #     f"Message received {chunk_time:.2f} seconds on option {choice_index} after request: {chunk_message}"
-                # )  # print the delay and text
-        print(total_block_append_time)
+                    output_texts[block_index].append(text_chunk)
+                if function_call := chunk_message.get("function_call"):
+                    function_output = json.dumps({"function_call": function_call})
+                    output_block.append_stream(bytes(function_output, encoding="utf-8"))
+                    output_texts[block_index].append(function_output)
+
         for output_block in output_blocks:
             output_block.finish_stream()
-        # texts = [
-        #     "".join([m.get("content", "") for m in choice])
-        #     for choice in collected_messages
-        # ]
-        #
-        # for i, text in enumerate(texts):
-        #     print(f"{i} **********")
-        #     print(text)
-        #     print("\n\n\n\n")
 
-        # # Fetch text from responses
-        # generations = []
-        # for choice in openai_result["choices"]:
-        #     message = choice["message"]
-        #     role = message["role"]
-        #     if function_call := message.get("function_call"):
-        #         content = json.dumps({"function_call": function_call})
-        #     else:
-        #         content = message.get("content", "")
-        #
-        #     generations.append((content, role))
+        usage_reports = self._calculate_usage(messages, output_texts, completion_id)
 
-        # # for token usage tracking, we need to include not just the token usage, but also completion id
-        # # that will allow proper usage aggregation for n > 1 cases
-        # usage = openai_result["usage"]
-        # usage["completion_id"] = openai_result["id"]
+        return usage_reports
 
-        # usage_reports = [
-        #     UsageReport(
-        #         operation_type=OperationType.RUN,
-        #         operation_unit=OperationUnit.PROMPT_TOKENS,
-        #         operation_amount=usage["prompt_tokens"],
-        #         audit_id=usage["completion_id"],
-        #     ),
-        #     UsageReport(
-        #         operation_type=OperationType.RUN,
-        #         operation_unit=OperationUnit.SAMPLED_TOKENS,
-        #         operation_amount=usage["completion_tokens"],
-        #         audit_id=usage["completion_id"],
-        #     ),
-        # ]
-
-        usage_reports = []
-
+    def _calculate_usage(
+        self,
+        messages: List[Dict[str, str]],
+        output_texts: List[str],
+        completion_id: str,
+    ) -> [UsageReport]:
+        # for token usage tracking, we need to include not just the token usage, but also completion id
+        # that will allow proper usage aggregation for n > 1 cases
+        encoding = tiktoken.encoding_for_model(self.config.model)
+        output_tokens = sum([len(encoding.encode(text)) for text in output_texts])
+        prompt_tokens = sum(
+            [len(encoding.encode(message.get("content", ""))) for message in messages]
+        )
+        usage_reports = [
+            UsageReport(
+                operation_type=OperationType.RUN,
+                operation_unit=OperationUnit.PROMPT_TOKENS,
+                operation_amount=prompt_tokens,
+                audit_id=completion_id,
+            ),
+            UsageReport(
+                operation_type=OperationType.RUN,
+                operation_unit=OperationUnit.SAMPLED_TOKENS,
+                operation_amount=output_tokens,
+                audit_id=completion_id,
+            ),
+        ]
         return usage_reports
 
     @staticmethod
@@ -337,7 +327,8 @@ class GPT4Plugin(StreamingGenerator):
 
         self.config.extend_with_dict(request.data.options, overwrite=True)
 
-        # We return one block per completion-choice we're configured for
+        # We return one block per completion-choice we're configured for (config.n)
+        # This expectation is coded into the generate_with_retry method
         block_types_to_create = [MimeTypes.TXT.value] * self.config.n
         return InvocableResponse(
             data=BlockTypePluginOutput(block_types_to_create=block_types_to_create)
