@@ -108,9 +108,8 @@ def test_functions():
 
 
 def test_functions_function_message():
-    gpt4 = GPT4Plugin(
-        config={},
-    )
+    client = Steamship(profile="test")
+    gpt4 = GPT4Plugin(client=client, config={})
 
     blocks = [
         Block(
@@ -131,43 +130,41 @@ def test_functions_function_message():
         ),
     ]
 
-    new_blocks = gpt4.run(
-        PluginRequest(
-            data=RawBlockAndTagPluginInput(
-                blocks=blocks,
-                options={
-                    "functions": [
-                        {
-                            "name": "Search",
-                            "description": "useful for when you need to answer questions about current events. You should ask targeted questions",
-                            "parameters": {
-                                "properties": {
-                                    "query": {"title": "query", "type": "string"}
-                                },
-                                "required": ["query"],
-                                "type": "object",
-                            },
-                        }
-                    ]
-                },
-            )
-        )
+    _, new_blocks = run_test_streaming(
+        client,
+        gpt4,
+        blocks=blocks,
+        options={
+            "functions": [
+                {
+                    "name": "Search",
+                    "description": "useful for when you need to answer questions about current events. You should ask targeted questions",
+                    "parameters": {
+                        "properties": {"query": {"title": "query", "type": "string"}},
+                        "required": ["query"],
+                        "type": "object",
+                    },
+                }
+            ]
+        },
     )
-    assert len(new_blocks.data.blocks) == 1
-    assert new_blocks.data.blocks[0].text is not None
-    assert isinstance(new_blocks.data.blocks[0].text, str)
-    text = new_blocks.data.blocks[0].text.strip()
+    assert len(new_blocks) == 1
+    assert new_blocks[0].text is not None
+    assert isinstance(new_blocks[0].text, str)
+    text = new_blocks[0].text.strip()
     assert "Vin Diesel" in text
 
 
 def test_default_prompt():
+    client = Steamship(profile="test")
     gpt4 = GPT4Plugin(
+        client=client,
         config={
             "openai_api_key": "",
             "default_system_prompt": "You are very silly and are afraid of numbers. When you see "
             "them you scream: 'YIKES!'",
             "moderate_output": False,
-        }
+        },
     )
 
     blocks = [
@@ -178,17 +175,16 @@ def test_default_prompt():
         ),
     ]
 
-    new_blocks = gpt4.run(
-        PluginRequest(
-            data=RawBlockAndTagPluginInput(blocks=blocks, options={"stop": "6"})
-        )
+    _, new_blocks = run_test_streaming(
+        client, gpt4, blocks=blocks, options={"stop": "6"}
     )
-    assert len(new_blocks.data.blocks) == 1
-    assert new_blocks.data.blocks[0].text.strip() == "YIKES!"
+    assert len(new_blocks) == 1
+    assert new_blocks[0].text.strip() == "YIKES!"
 
 
 def test_flagged_prompt():
-    gpt4 = GPT4Plugin(config={"openai_api_key": ""})
+    client = Steamship(profile="test")
+    gpt4 = GPT4Plugin(client=client, config={"openai_api_key": ""})
 
     blocks = [
         Block(
@@ -199,9 +195,7 @@ def test_flagged_prompt():
     ]
 
     with pytest.raises(SteamshipError):
-        new_blocks = gpt4.run(
-            PluginRequest(data=RawBlockAndTagPluginInput(blocks=blocks))
-        )
+        _, _ = run_test_streaming(client, gpt4, blocks=blocks, options={})
 
 
 def test_invalid_model_for_billing():
@@ -240,11 +234,6 @@ def test_streaming_generation():
 
     assert result_usage[1].operation_unit == OperationUnit.SAMPLED_TOKENS
     assert result_usage[1].operation_amount == 256 * 3
-
-    for i, text in enumerate(result_texts):
-        print(f"{i} **********")
-        print(text)
-        print("\n\n\n\n")
 
 
 def run_test_streaming(
