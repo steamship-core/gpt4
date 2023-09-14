@@ -4,8 +4,10 @@ from typing import Any, Dict, List, Optional, Type
 
 import openai
 from pydantic import Field
+
+
 from steamship import Steamship, Block, Tag, SteamshipError
-from steamship.data.tags.tag_constants import TagKind, RoleTag
+from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey
 from steamship.invocable import Config, InvocableResponse, InvocationContext
 from steamship.plugin.generator import Generator
 from steamship.plugin.inputs.raw_block_and_tag_plugin_input import (
@@ -95,12 +97,10 @@ class GPT4Plugin(Generator):
         n: Optional[int] = Field(
             1, description="How many completions to generate for each prompt."
         )
-
         default_role: str = Field(
             RoleTag.USER.value,
             description="The default role to use for a block that does not have a Tag of kind='role'",
         )
-
         default_system_prompt: str = Field(
             "", description="System prompt that will be prepended before every request"
         )
@@ -129,9 +129,19 @@ class GPT4Plugin(Generator):
     def prepare_message(self, block: Block) -> Dict[str, str]:
         role = None
         name = None
+        function_selection = False
+
         for tag in block.tags:
             if tag.kind == TagKind.ROLE:
                 role = tag.name
+
+            if tag.kind == TagKind.ROLE and tag.name == RoleTag.FUNCTION:
+                if values := tag.value:
+                    if fn_name := values.get(TagValueKey.STRING_VALUE, None):
+                        name = fn_name
+
+            if tag.kind == "function-selection":
+                function_selection = True
 
             if tag.kind == "name":
                 name = tag.name
@@ -139,10 +149,13 @@ class GPT4Plugin(Generator):
         if role is None:
             role = self.config.default_role
 
+        if function_selection:
+            return {"role": RoleTag.ASSISTANT, "content": None, "function_call": json.loads(block.text)}
+
         if name:
             return {"role": role, "content": block.text, "name": name}
-        else:
-            return {"role": role, "content": block.text}
+
+        return {"role": role, "content": block.text}
 
     def prepare_messages(self, blocks: List[Block]) -> List[Dict[str, str]]:
         messages = []
@@ -254,7 +267,7 @@ class GPT4Plugin(Generator):
     @staticmethod
     def _flagged(messages: List[Dict[str, str]]) -> bool:
         input_text = "\n\n".join(
-            [value for role_dict in messages for value in role_dict.values()]
+            [json.dumps(value) for role_dict in messages for value in role_dict.values()]
         )
         moderation = openai.Moderation.create(input=input_text)
         return moderation["results"][0]["flagged"]
