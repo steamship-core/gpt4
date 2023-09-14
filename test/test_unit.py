@@ -2,7 +2,7 @@ import json
 
 import pytest
 from steamship import Block, Tag, MimeTypes, SteamshipError, File, Steamship
-from steamship.data.tags.tag_constants import TagKind, RoleTag
+from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey
 from steamship.plugin.inputs.raw_block_and_tag_plugin_input import (
     RawBlockAndTagPluginInput,
 )
@@ -17,185 +17,192 @@ from src.api import GPT4Plugin
 
 @pytest.mark.parametrize("model", ["", "gpt-4-32k"])
 def test_generator(model: str):
-    client = Steamship(profile="test")
-    gpt4 = GPT4Plugin(client=client, config={"n": 4, "model": model})
+    with Steamship.temporary_workspace() as client:
+        gpt4 = GPT4Plugin(client=client, config={"n": 4, "model": model})
 
-    blocks = [
-        Block(
-            text="You are an assistant who loves to count",
-            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
-            mime_type=MimeTypes.TXT,
-        ),
-        Block(
-            text="Continue this series: 1 2 3 4",
-            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
-            mime_type=MimeTypes.TXT,
-        ),
-    ]
+        blocks = [
+            Block(
+                text="You are an assistant who loves to count",
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
+                mime_type=MimeTypes.TXT,
+            ),
+            Block(
+                text="Continue this series: 1 2 3 4",
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
+                mime_type=MimeTypes.TXT,
+            ),
+        ]
 
-    usage, new_blocks = run_test_streaming(client, gpt4, blocks, options={})
-    assert len(new_blocks) == 4
-    for block in new_blocks:
-        assert block.text.strip().startswith("5 6 7 8")
+        usage, new_blocks = run_test_streaming(client, gpt4, blocks, options={})
+        assert len(new_blocks) == 4
+        for block in new_blocks:
+            assert block.text.strip().startswith("5 6 7 8")
 
-    assert usage is not None
-    assert len(usage) == 2
+        assert usage is not None
+        assert len(usage) == 2
 
 
 def test_stopwords():
-    client = Steamship(profile="test")
-    gpt4 = GPT4Plugin(client=client, config={})
+    with Steamship.temporary_workspace() as client:
+        gpt4 = GPT4Plugin(client=client, config={})
 
-    blocks = [
-        Block(
-            text="You are an assistant who loves to count",
-            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
-            mime_type=MimeTypes.TXT,
-        ),
-        Block(
-            text="Continue this series: 1 2 3 4",
-            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
-            mime_type=MimeTypes.TXT,
-        ),
-    ]
+        blocks = [
+            Block(
+                text="You are an assistant who loves to count",
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
+                mime_type=MimeTypes.TXT,
+            ),
+            Block(
+                text="Continue this series: 1 2 3 4",
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
+                mime_type=MimeTypes.TXT,
+            ),
+        ]
 
-    _, new_blocks = run_test_streaming(
-        client, gpt4, blocks=blocks, options={"stop": "6"}
-    )
-    assert len(new_blocks) == 1
-    assert new_blocks[0].text.strip() == "5"
+        _, new_blocks = run_test_streaming(
+            client, gpt4, blocks=blocks, options={"stop": "6"}
+        )
+        assert len(new_blocks) == 1
+        assert new_blocks[0].text.strip() == "5"
 
 
 def test_functions():
-    client = Steamship(profile="test")
-    gpt4 = GPT4Plugin(client=client, config={})
+    with Steamship.temporary_workspace() as client:
+        gpt4 = GPT4Plugin(client=client, config={})
 
-    blocks = [
-        Block(
-            text="You are a helpful AI assistant.",
-            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
-            mime_type=MimeTypes.TXT,
-        ),
-        Block(
-            text="Search for the weather of today in Berlin",
-            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
-            mime_type=MimeTypes.TXT,
-        ),
-    ]
+        blocks = [
+            Block(
+                text="You are a helpful AI assistant.",
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
+                mime_type=MimeTypes.TXT,
+            ),
+            Block(
+                text="Search for the weather of today in Berlin",
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
+                mime_type=MimeTypes.TXT,
+            ),
+        ]
 
-    _, new_blocks = run_test_streaming(
-        client,
-        gpt4,
-        blocks=blocks,
-        options={
-            "functions": [
-                {
-                    "name": "Search",
-                    "description": "useful for when you need to answer questions about current events. You should ask targeted questions",
-                    "parameters": {
-                        "properties": {"query": {"title": "query", "type": "string"}},
-                        "required": ["query"],
-                        "type": "object",
-                    },
-                }
-            ]
-        },
-    )
-    assert len(new_blocks) == 1
-    assert "function_call" in new_blocks[0].text.strip()
-    function_call = json.loads(new_blocks[0].text.strip())
-    assert "function_call" in function_call
+        _, new_blocks = run_test_streaming(
+            client,
+            gpt4,
+            blocks=blocks,
+            options={
+                "functions": [
+                    {
+                        "name": "Search",
+                        "description": "useful for when you need to answer questions about current events. You should ask targeted questions",
+                        "parameters": {
+                            "properties": {
+                                "query": {"title": "query", "type": "string"}
+                            },
+                            "required": ["query"],
+                            "type": "object",
+                        },
+                    }
+                ]
+            },
+        )
+        assert len(new_blocks) == 1
+        assert "function_call" in new_blocks[0].text.strip()
+        function_call = json.loads(new_blocks[0].text.strip())
+        assert "function_call" in function_call
 
 
 def test_functions_function_message():
-    client = Steamship(profile="test")
-    gpt4 = GPT4Plugin(client=client, config={})
+    with Steamship.temporary_workspace() as client:
+        gpt4 = GPT4Plugin(client=client, config={})
 
-    blocks = [
-        Block(
-            text="You are a helpful AI assistant.",
-            tags=[Tag(kind="role", name="system")],
-        ),
-        Block(
-            text="Who is Vin Diesel's girlfriend?",
-            tags=[Tag(kind="role", name="user")],
-        ),
-        Block(
-            text='{"function_call": {"name": "Search", "arguments": "{\\n  \\"__arg1\\": \\"Vin Diesel\'s girlfriend\\"\\n}"}}',
-            tags=[Tag(kind="role", name="assistant")],
-        ),
-        Block(
-            text="Paloma Jiménez",
-            tags=[Tag(kind="role", name="function"), Tag(kind="name", name="Search")],
-        ),
-    ]
+        blocks = [
+            Block(
+                text="You are a helpful AI assistant.",
+                tags=[Tag(kind="role", name="system")],
+            ),
+            Block(
+                text="Who is Vin Diesel's girlfriend?",
+                tags=[Tag(kind="role", name="user")],
+            ),
+            Block(
+                text='{"function_call": {"name": "Search", "arguments": "{\\n  \\"__arg1\\": \\"Vin Diesel\'s girlfriend\\"\\n}"}}',
+                tags=[Tag(kind="role", name="assistant")],
+            ),
+            Block(
+                text="Paloma Jiménez",
+                tags=[
+                    Tag(kind="role", name="function"),
+                    Tag(kind="name", name="Search"),
+                ],
+            ),
+        ]
 
-    _, new_blocks = run_test_streaming(
-        client,
-        gpt4,
-        blocks=blocks,
-        options={
-            "functions": [
-                {
-                    "name": "Search",
-                    "description": "useful for when you need to answer questions about current events. You should ask targeted questions",
-                    "parameters": {
-                        "properties": {"query": {"title": "query", "type": "string"}},
-                        "required": ["query"],
-                        "type": "object",
-                    },
-                }
-            ]
-        },
-    )
-    assert len(new_blocks) == 1
-    assert new_blocks[0].text is not None
-    assert isinstance(new_blocks[0].text, str)
-    text = new_blocks[0].text.strip()
-    assert "Vin Diesel" in text
+        _, new_blocks = run_test_streaming(
+            client,
+            gpt4,
+            blocks=blocks,
+            options={
+                "functions": [
+                    {
+                        "name": "Search",
+                        "description": "useful for when you need to answer questions about current events. You should ask targeted questions",
+                        "parameters": {
+                            "properties": {
+                                "query": {"title": "query", "type": "string"}
+                            },
+                            "required": ["query"],
+                            "type": "object",
+                        },
+                    }
+                ]
+            },
+        )
+        assert len(new_blocks) == 1
+        assert new_blocks[0].text is not None
+        assert isinstance(new_blocks[0].text, str)
+        text = new_blocks[0].text.strip()
+        assert "Vin Diesel" in text
 
 
 def test_default_prompt():
-    client = Steamship(profile="test")
-    gpt4 = GPT4Plugin(
-        client=client,
-        config={
-            "openai_api_key": "",
-            "default_system_prompt": "You are very silly and are afraid of numbers. When you see "
-            "them you scream: 'YIKES!'",
-            "moderate_output": False,
-        },
-    )
+    with Steamship.temporary_workspace() as client:
+        gpt4 = GPT4Plugin(
+            client=client,
+            config={
+                "openai_api_key": "",
+                "default_system_prompt": "You are very silly and are afraid of numbers. When you see "
+                "them you scream: 'YIKES!'",
+                "moderate_output": False,
+            },
+        )
 
-    blocks = [
-        Block(
-            text="1 2 3 4",
-            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
-            mime_type=MimeTypes.TXT,
-        ),
-    ]
+        blocks = [
+            Block(
+                text="1 2 3 4",
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
+                mime_type=MimeTypes.TXT,
+            ),
+        ]
 
-    _, new_blocks = run_test_streaming(
-        client, gpt4, blocks=blocks, options={"stop": "6"}
-    )
-    assert len(new_blocks) == 1
-    assert new_blocks[0].text.strip() == "YIKES!"
+        _, new_blocks = run_test_streaming(
+            client, gpt4, blocks=blocks, options={"stop": "6"}
+        )
+        assert len(new_blocks) == 1
+        assert new_blocks[0].text.strip() == "YIKES!"
 
 
 def test_flagged_prompt():
-    client = Steamship(profile="test")
-    gpt4 = GPT4Plugin(client=client, config={"openai_api_key": ""})
+    with Steamship.temporary_workspace() as client:
+        gpt4 = GPT4Plugin(client=client, config={"openai_api_key": ""})
 
-    blocks = [
-        Block(
-            text=" <Insert something super offensive here to run this test>",
-            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
-            mime_type=MimeTypes.TXT,
-        ),
-    ]
+        blocks = [
+            Block(
+                text=" <Insert something super offensive here to run this test>",
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
+                mime_type=MimeTypes.TXT,
+            ),
+        ]
 
-    with pytest.raises(SteamshipError):
-        _, _ = run_test_streaming(client, gpt4, blocks=blocks, options={})
+        with pytest.raises(SteamshipError):
+            _, _ = run_test_streaming(client, gpt4, blocks=blocks, options={})
 
 
 def test_invalid_model_for_billing():
@@ -207,33 +214,33 @@ def test_invalid_model_for_billing():
 
 
 def test_streaming_generation():
-    client = Steamship(profile="test")
-    gpt4 = GPT4Plugin(client=client, config={})
+    with Steamship.temporary_workspace() as client:
+        gpt4 = GPT4Plugin(client=client, config={})
 
-    blocks = [
-        Block(
-            text="Tell me a 500 word story about bananas",
-            tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
-            mime_type=MimeTypes.TXT,
-        ),
-    ]
+        blocks = [
+            Block(
+                text="Tell me a 500 word story about bananas",
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
+                mime_type=MimeTypes.TXT,
+            ),
+        ]
 
-    result_usage, result_blocks = run_test_streaming(
-        client, gpt4, blocks=blocks, options={"n": 3}
-    )
-    result_texts = [block.text for block in result_blocks]
+        result_usage, result_blocks = run_test_streaming(
+            client, gpt4, blocks=blocks, options={"n": 3}
+        )
+        result_texts = [block.text for block in result_blocks]
 
-    assert len(result_texts) == 3
-    assert result_texts[0] != result_texts[1]
-    assert result_texts[1] != result_texts[2]
-    assert result_texts[0] != result_texts[2]
+        assert len(result_texts) == 3
+        assert result_texts[0] != result_texts[1]
+        assert result_texts[1] != result_texts[2]
+        assert result_texts[0] != result_texts[2]
 
-    assert len(result_usage) == 2
-    assert result_usage[0].operation_unit == OperationUnit.PROMPT_TOKENS
-    assert result_usage[0].operation_amount == 9
+        assert len(result_usage) == 2
+        assert result_usage[0].operation_unit == OperationUnit.PROMPT_TOKENS
+        assert result_usage[0].operation_amount == 9
 
-    assert result_usage[1].operation_unit == OperationUnit.SAMPLED_TOKENS
-    assert result_usage[1].operation_amount == 256 * 3
+        assert result_usage[1].operation_unit == OperationUnit.SAMPLED_TOKENS
+        assert result_usage[1].operation_amount == 256 * 3
 
 
 def run_test_streaming(
@@ -264,6 +271,105 @@ def run_test_streaming(
     )
     result_blocks = [Block.get(client, _id=block.id) for block in output_blocks]
     return response.data.usage, result_blocks
+
+
+def test_multimodal_functions_with_blocks():
+    with Steamship.temporary_workspace() as steamship:
+        gpt4 = GPT4Plugin(client=steamship, config={})
+        blocks = [
+            Block(
+                text="You are a helpful AI assistant.",
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
+                mime_type=MimeTypes.TXT,
+            ),
+            Block(
+                text="Generate an image of a sailboat.",
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
+                mime_type=MimeTypes.TXT,
+            ),
+            Block(
+                text=json.dumps(
+                    {"name": "generate_image", "arguments": '{ "text": "sailboat" }'}
+                ),
+                tags=[
+                    Tag(kind=TagKind.ROLE, name=RoleTag.ASSISTANT),
+                    Tag(kind="function-selection", name="generate_image"),
+                ],
+                mime_type=MimeTypes.PNG,
+            ),
+            Block(
+                text="c2f6818c-233d-4426-9dc5-f3c28fa33068",
+                tags=[
+                    Tag(
+                        kind=TagKind.ROLE,
+                        name="function",
+                        value={TagValueKey.STRING_VALUE: "generate_image"},
+                    )
+                ],
+                mime_type=MimeTypes.PNG,
+            ),
+            Block(
+                text="Make the background of the image blue.",
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
+                mime_type=MimeTypes.TXT,
+            ),
+        ]
+
+        _, new_blocks = run_test_streaming(
+            steamship,
+            gpt4,
+            blocks=blocks,
+            options={
+                "functions": [
+                    {
+                        "name": "PixToPixTool",
+                        "description": "Modifies an existing image according to a text prompt.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "text": {
+                                    "type": "string",
+                                    "description": "text prompt for a tool.",
+                                },
+                                "uuid": {
+                                    "type": "string",
+                                    "description": 'UUID for a Steamship Block. Used to refer to a non-textual input generated by another function. Example: "c2f6818c-233d-4426-9dc5-f3c28fa33068"',
+                                },
+                            },
+                        },
+                    },
+                    {
+                        "name": "DalleTool",
+                        "description": "Generates a new image from a text prompt.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "text": {
+                                    "type": "string",
+                                    "description": "text prompt for a tool.",
+                                },
+                                "uuid": {
+                                    "type": "string",
+                                    "description": 'UUID for a Steamship Block. Used to refer to a non-textual input generated by another function. Example: "c2f6818c-233d-4426-9dc5-f3c28fa33068"',
+                                },
+                            },
+                        },
+                    },
+                ]
+            },
+        )
+        assert len(new_blocks) == 1
+        assert "function_call" in new_blocks[0].text.strip()
+        function_call = json.loads(new_blocks[0].text.strip())
+        assert "function_call" in function_call
+        fc = function_call.get("function_call")
+        assert "PixToPixTool" == fc.get("name", "")
+        args = fc.get("arguments", None)
+        assert args is not None
+        assert "uuid" in args
+        assert "c2f6818c-233d-4426-9dc5-f3c28fa33068" in args
+        assert "text" in args
+        assert "blue" in args
 
 
 def fetch_result_text(block: Block) -> str:

@@ -154,7 +154,11 @@ class GPT4Plugin(StreamingGenerator):
             role = self.config.default_role
 
         if function_selection:
-            return {"role": RoleTag.ASSISTANT, "content": None, "function_call": json.loads(block.text)}
+            return {
+                "role": RoleTag.ASSISTANT,
+                "content": None,
+                "function_call": json.loads(block.text),
+            }
 
         if name:
             return {"role": role, "content": block.text, "name": name}
@@ -302,7 +306,10 @@ class GPT4Plugin(StreamingGenerator):
         encoding = tiktoken.encoding_for_model(self.config.model)
         output_tokens = sum([len(encoding.encode(text)) for text in output_texts])
         prompt_tokens = sum(
-            [len(encoding.encode(message.get("content", ""))) for message in messages]
+            [
+                len(encoding.encode(message.get("content", "") or ""))
+                for message in messages
+            ]
         )
         usage_reports = [
             UsageReport(
@@ -323,7 +330,11 @@ class GPT4Plugin(StreamingGenerator):
     @staticmethod
     def _flagged(messages: List[Dict[str, str]]) -> bool:
         input_text = "\n\n".join(
-            [json.dumps(value) for role_dict in messages for value in role_dict.values()]
+            [
+                json.dumps(value)
+                for role_dict in messages
+                for value in role_dict.values()
+            ]
         )
         moderation = openai.Moderation.create(input=input_text)
         return moderation["results"][0]["flagged"]
