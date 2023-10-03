@@ -2,7 +2,7 @@ import json
 
 import pytest
 from steamship import Block, Tag, MimeTypes, SteamshipError
-from steamship.data.tags.tag_constants import TagKind, RoleTag
+from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey, ChatTag
 from steamship.plugin.inputs.raw_block_and_tag_plugin_input import (
     RawBlockAndTagPluginInput,
 )
@@ -194,7 +194,7 @@ def test_flagged_prompt():
 
     blocks = [
         Block(
-            text=" <Insert something super offensive here to run this test>",
+            text="fuck fuck fuck fuck fuck fuck fuck yourself",
             tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
             mime_type=MimeTypes.TXT,
         ),
@@ -212,3 +212,51 @@ def test_invalid_model_for_billing():
             config={"model": "a model that does not exist", "openai_api_key": ""}
         )
         assert "This plugin cannot be used with model" in str(e)
+
+
+def test_prepare_messages():
+    gpt4 = GPT4Plugin(
+        config={},
+    )
+
+    blocks = [
+        Block(
+            text="You are a helpful AI assistant.\n\nNOTE: Some functions return images, video, and audio files. These multimedia files will be represented in messages as\nUUIDs for Steamship Blocks. When responding directly to a user, you SHOULD print the Steamship Blocks for the images,\nvideo, or audio as follows: `Block(UUID for the block)`.\n\nExample response for a request that generated an image:\nHere is the image you requested: Block(288A2CA1-4753-4298-9716-53C1E42B726B).\n\nOnly use the functions you have been provided with.\n",
+            tags=[Tag(kind=TagKind.CHAT, name=ChatTag.ROLE, value={TagValueKey.STRING_VALUE: "system"})],
+        ),
+        Block(
+            text="Who is the current president of Taiwan?",
+            tags=[Tag(kind=TagKind.CHAT, name=ChatTag.ROLE, value={TagValueKey.STRING_VALUE: "user"})],
+        ),
+        Block(
+            text=json.dumps({"name": "SearchTool", "arguments": "{\"text\": \"current president of Taiwan\"}"}),
+            tags=[Tag(kind=TagKind.CHAT, name=ChatTag.ROLE, value={TagValueKey.STRING_VALUE: "assistant"}),
+                  Tag(kind="function-selection", name="SearchTool")],
+        ),
+        Block(
+            text="Tsai Ing-wen",
+            tags=[Tag(kind=ChatTag.ROLE, name=RoleTag.FUNCTION, value={TagValueKey.STRING_VALUE: "SearchTool"})],
+        ),
+        Block(
+            text="The current president of Taiwan is Tsai Ing-wen.",
+            tags=[Tag(kind=TagKind.CHAT, name=ChatTag.ROLE, value={TagValueKey.STRING_VALUE: "assistant"})],
+        ),
+        Block(
+            text="totally. thanks.",
+            tags=[Tag(kind=TagKind.CHAT, name=ChatTag.ROLE, value={TagValueKey.STRING_VALUE: "user"})],
+        ),
+    ]
+
+    messages = gpt4.prepare_messages(blocks=blocks)
+
+    expected_messages = [
+        {'role': 'system', 'content': 'You are a helpful AI assistant.\n\nNOTE: Some functions return images, video, and audio files. These multimedia files will be represented in messages as\nUUIDs for Steamship Blocks. When responding directly to a user, you SHOULD print the Steamship Blocks for the images,\nvideo, or audio as follows: `Block(UUID for the block)`.\n\nExample response for a request that generated an image:\nHere is the image you requested: Block(288A2CA1-4753-4298-9716-53C1E42B726B).\n\nOnly use the functions you have been provided with.\n'},
+        {'role': 'user', 'content': 'Who is the current president of Taiwan?'},
+        {'role': 'assistant', 'content': None, 'function_call': {'arguments': '{"text": "current president of Taiwan"}', 'name': 'SearchTool'}},
+        {'role': 'function', 'content': 'Tsai Ing-wen', 'name': 'SearchTool'},
+        {'role': 'assistant', 'content': 'The current president of Taiwan is Tsai Ing-wen.'},
+        {'role': 'user', 'content': 'totally. thanks.'}
+    ]
+
+    for msg in messages:
+        assert msg in expected_messages, f"could not find expected message: {msg}"

@@ -7,7 +7,7 @@ from pydantic import Field
 
 
 from steamship import Steamship, Block, Tag, SteamshipError
-from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey
+from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey, ChatTag
 from steamship.invocable import Config, InvocableResponse, InvocationContext
 from steamship.plugin.generator import Generator
 from steamship.plugin.inputs.raw_block_and_tag_plugin_input import (
@@ -133,7 +133,13 @@ class GPT4Plugin(Generator):
 
         for tag in block.tags:
             if tag.kind == TagKind.ROLE:
+                # this is a legacy way of extracting roles
                 role = tag.name
+
+            if tag.kind == TagKind.CHAT and tag.name == ChatTag.ROLE:
+                if values := tag.value:
+                    if role_name := values.get(TagValueKey.STRING_VALUE, None):
+                        role = role_name
 
             if tag.kind == TagKind.ROLE and tag.name == RoleTag.FUNCTION:
                 if values := tag.value:
@@ -149,8 +155,11 @@ class GPT4Plugin(Generator):
         if role is None:
             role = self.config.default_role
 
+        if role == "function" and not name:
+            name = "unknown"  # protect against missing function names
+
         if function_selection:
-            return {"role": RoleTag.ASSISTANT, "content": None, "function_call": json.loads(block.text)}
+            return {"role": RoleTag.ASSISTANT.value, "content": None, "function_call": json.loads(block.text)}
 
         if name:
             return {"role": role, "content": block.text, "name": name}
@@ -214,7 +223,6 @@ class GPT4Plugin(Generator):
             )
             if functions:
                 kwargs = {**kwargs, "functions": functions}
-
             return openai.ChatCompletion.create(**kwargs)
 
         openai_result = _generate_with_retry()

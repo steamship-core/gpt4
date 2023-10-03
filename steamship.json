@@ -1,7 +1,7 @@
 {
 	"type": "plugin",
 	"handle": "gpt-4",
-	"version": "0.1.0-rc.12",
+	"version": "0.1.0-rc.14",
 	"description": "",
 	"author": "dave",
 	"entrypoint": "Unused",
@@ -9,7 +9,8 @@
 	"plugin": {
 		"isTrainable": false,
 		"transport": "jsonOverHttp",
-		"type": "generator"
+		"type": "generator",
+		"streaming": false
 	},
 	"build_config": {
 		"ignore": [
