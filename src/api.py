@@ -126,7 +126,7 @@ class GPT4Plugin(Generator):
             )
         openai.api_key = self.config.openai_api_key
 
-    def prepare_message(self, block: Block) -> Dict[str, str]:
+    def prepare_message(self, block: Block) -> Optional[Dict[str, str]]:
         role = None
         name = None
         function_selection = False
@@ -155,6 +155,10 @@ class GPT4Plugin(Generator):
         if role is None:
             role = self.config.default_role
 
+        if role not in ["function", "system", "assistant", "user"]:
+            logging.warning(f"unsupported role {role} found in message. skipping...")
+            return None
+
         if role == "function" and not name:
             name = "unknown"  # protect against missing function names
 
@@ -175,9 +179,9 @@ class GPT4Plugin(Generator):
         # TODO: remove is_text check here when can handle image etc. input
         messages.extend(
             [
-                self.prepare_message(block)
-                for block in blocks
-                if block.text is not None and block.text != ""
+                msg for msg in
+                (self.prepare_message(block) for block in blocks if block.text is not None and block.text != "")
+                if msg is not None
             ]
         )
         return messages
@@ -223,6 +227,9 @@ class GPT4Plugin(Generator):
             )
             if functions:
                 kwargs = {**kwargs, "functions": functions}
+
+            logging.info("calling open ai chatcompletion create",
+                         extra={"messages": messages, "functions": functions})
             return openai.ChatCompletion.create(**kwargs)
 
         openai_result = _generate_with_retry()

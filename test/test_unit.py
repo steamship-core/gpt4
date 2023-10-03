@@ -245,6 +245,10 @@ def test_prepare_messages():
             text="totally. thanks.",
             tags=[Tag(kind=TagKind.CHAT, name=ChatTag.ROLE, value={TagValueKey.STRING_VALUE: "user"})],
         ),
+        Block(
+            text="will be filtered out",
+            tags=[Tag(kind=TagKind.CHAT, name=ChatTag.ROLE, value={TagValueKey.STRING_VALUE: "agent"})],
+        )
     ]
 
     messages = gpt4.prepare_messages(blocks=blocks)
