@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Type
 import openai
 import tiktoken
 from pydantic import Field
+
 from steamship import Steamship, Block, Tag, SteamshipError, MimeTypes
 from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey, ChatTag
 from steamship.invocable import Config, InvocableResponse, InvocationContext
@@ -240,6 +241,8 @@ class GPT4Plugin(StreamingGenerator):
             if functions:
                 kwargs = {**kwargs, "functions": functions}
 
+            logging.info("calling open ai chatcompletion create",
+                         extra={"messages": messages, "functions": functions})
             return openai.ChatCompletion.create(**kwargs)
 
         openai_result = _generate_with_retry()

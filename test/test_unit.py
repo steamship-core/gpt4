@@ -1,6 +1,7 @@
 import json
 
 import pytest
+
 from steamship import Block, Tag, MimeTypes, SteamshipError, File, Steamship
 from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey, ChatTag
 from steamship.plugin.inputs.raw_block_and_tag_plugin_input import (
@@ -195,12 +196,11 @@ def test_flagged_prompt():
 
         blocks = [
             Block(
-                text=" <Insert something super offensive here to run this test>",
+                text="fuck fuck fuck fuck fuck fuck fuck yourself",
                 tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
                 mime_type=MimeTypes.TXT,
             ),
         ]
-
         with pytest.raises(SteamshipError):
             _, _ = run_test_streaming(client, gpt4, blocks=blocks, options={})
 
