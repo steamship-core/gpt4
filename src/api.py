@@ -378,7 +378,7 @@ class GPT4Plugin(StreamingGenerator):
         self, request: PluginRequest[RawBlockAndTagPluginInput]
     ) -> InvocableResponse[BlockTypePluginOutput]:
 
-        if 'model' in request.data.options:
+        if request.data.options is not None and 'model' in request.data.options:
             raise SteamshipError("Model may not be overridden in options")
 
         self.config.extend_with_dict(request.data.options, overwrite=True)
