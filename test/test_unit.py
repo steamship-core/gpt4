@@ -210,8 +210,16 @@ def test_invalid_model_for_billing():
         _ = GPT4Plugin(
             config={"model": "a model that does not exist", "openai_api_key": ""}
         )
-        assert "This plugin cannot be used with model" in str(e)
+    assert "This plugin cannot be used with model" in str(e)
 
+def test_cant_override_model():
+    with Steamship.temporary_workspace() as client:
+        gpt4 = GPT4Plugin(
+            config={}
+        )
+        with pytest.raises(SteamshipError) as e:
+            _, _ = run_test_streaming(client, gpt4, blocks=[Block(text="yo")], options={"model":"gpt-3.5-turbo"})
+        assert "Model may not be overridden in options" in str(e)
 
 def test_streaming_generation():
     with Steamship.temporary_workspace() as client:

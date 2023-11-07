@@ -46,6 +46,7 @@ VALID_MODELS_FOR_BILLING = [
     "gpt-3.5-turbo-0613",
     "gpt-3.5-turbo-16k",
     "gpt-3.5-turbo-16k-0613",
+    "gpt-4-1106-preview"
 ]
 
 
@@ -376,6 +377,9 @@ class GPT4Plugin(StreamingGenerator):
     def determine_output_block_types(
         self, request: PluginRequest[RawBlockAndTagPluginInput]
     ) -> InvocableResponse[BlockTypePluginOutput]:
+
+        if 'model' in request.data.options:
+            raise SteamshipError("Model may not be overridden in options")
 
         self.config.extend_with_dict(request.data.options, overwrite=True)
 

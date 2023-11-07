@@ -10,7 +10,7 @@ from steamship.data.tags.tag_constants import RoleTag, TagValueKey
 GENERATOR_HANDLE = "gpt-4"
 
 @pytest.mark.parametrize(
-    "model", ["", "gpt-4-32k"]
+    "model", ["", "gpt-4-32k", "gpt-4-1106-preview"]
 )
 def test_generator(model: str):
     with Steamship.temporary_workspace() as steamship:
