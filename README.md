@@ -6,7 +6,7 @@ This plugin provides access to OpenAI's GPT-4 language model for text generation
 
 Use of this plugin is subject to OpenAI's [Terms of Use](https://openai.com/policies/terms-of-use).
 
-### Examples
+## Examples
 
 #### Basic
 
@@ -28,7 +28,18 @@ for block in task.output.blocks:
     print(block.text)
 ```
 
-### Cost
+## Cost
 
 [Pricing page](https://www.steamship.com/plugins/gpt-4?tab=Pricing)
 
+
+## Developing this Plugin
+
+Clone this repository, then set up a Python virtual environment with:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m pip install -r requirements.dev.txt
+```

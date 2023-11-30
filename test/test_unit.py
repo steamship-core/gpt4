@@ -251,6 +251,57 @@ def test_streaming_generation():
         assert result_usage[1].operation_amount == 256 * 3
 
 
+def test_streaming_generation_with_moderation():
+    with Steamship.temporary_workspace() as client:
+        gpt4 = GPT4Plugin(client=client, config={})
+
+        file = File.create(client, blocks=[
+            Block(
+                text="Fuck fuck fuck, you fucking fucker!",
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
+                mime_type=MimeTypes.TXT,
+            ),
+        ])
+
+        blocks_to_allocate = gpt4.determine_output_block_types(
+            PluginRequest(data=RawBlockAndTagPluginInput(blocks=file.blocks, options={"n": 1}))
+        )
+
+        output_blocks = []
+        for block_type_to_allocate in blocks_to_allocate.data.block_types_to_create:
+            assert block_type_to_allocate == MimeTypes.TXT.value
+            output_blocks.append(
+                Block.create(
+                    client,
+                    file_id=file.id,
+                    mime_type=MimeTypes.TXT.value,
+                    streaming=True,
+                )
+            )
+
+        file.refresh()
+        assert len(file.blocks) == 2
+        assert file.blocks[1].stream_state == "started"
+
+        with pytest.raises(SteamshipError):
+            gpt4.run(
+                PluginRequest(
+                    data=RawBlockAndTagPluginInputWithPreallocatedBlocks(
+                        blocks=file.blocks, options={"n": 1}, output_blocks=output_blocks
+                    )
+                )
+            )
+
+        # After this, because we were streaming, the block actually exists on the file.
+        file.refresh()
+        assert len(file.blocks) == 2
+
+        # But the status of that second block should be failed
+        assert file.blocks[1].stream_state == "aborted"
+
+        with pytest.raises(SteamshipError):
+            raw_text = file.blocks[1].raw()
+
 def run_test_streaming(
     client: Steamship, plugin: GPT4Plugin, blocks: [Block], options: dict
 ) -> ([UsageReport], [Block]):

@@ -361,6 +361,16 @@ class GPT4Plugin(StreamingGenerator):
 
         messages = self.prepare_messages(request.data.blocks)
         if self.config.moderate_output and self._flagged(messages):
+            # Before we bail, we have to mark the blocks as failed -- otherwise they will remain forever in the `streaming` state
+            try:
+                if request.data.output_blocks:
+                    for block in request.data.output_blocks:
+                        block.abort_stream()
+            except BaseException as ex:
+                raise SteamshipError(
+                    "Sorry, this content is flagged as inappropriate by OpenAI. Additionally, we were unable to abort the block stream.",
+                    error=ex
+                )
             raise SteamshipError(
                 "Sorry, this content is flagged as inappropriate by OpenAI."
             )
