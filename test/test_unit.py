@@ -13,13 +13,13 @@ from steamship.plugin.inputs.raw_block_and_tag_plugin_input_with_preallocated_bl
 from steamship.plugin.outputs.plugin_output import UsageReport, OperationUnit
 from steamship.plugin.request import PluginRequest
 
-from src.api import GPT4Plugin
+from src.api import LiteLLMPlugin
 
 
 @pytest.mark.parametrize("model", ["", "gpt-4-32k"])
 def test_generator(model: str):
     with Steamship.temporary_workspace() as client:
-        gpt4 = GPT4Plugin(client=client, config={"n": 4, "model": model})
+        litellm = LiteLLMPlugin(client=client, config={"n": 4, "model": model})
 
         blocks = [
             Block(
@@ -34,7 +34,7 @@ def test_generator(model: str):
             ),
         ]
 
-        usage, new_blocks = run_test_streaming(client, gpt4, blocks, options={})
+        usage, new_blocks = run_test_streaming(client, litellm, blocks, options={})
         assert len(new_blocks) == 4
         for block in new_blocks:
             assert block.text.strip().startswith("5 6 7 8")
@@ -45,7 +45,7 @@ def test_generator(model: str):
 
 def test_stopwords():
     with Steamship.temporary_workspace() as client:
-        gpt4 = GPT4Plugin(client=client, config={})
+        litellm = LiteLLMPlugin(client=client, config={})
 
         blocks = [
             Block(
@@ -61,7 +61,7 @@ def test_stopwords():
         ]
 
         _, new_blocks = run_test_streaming(
-            client, gpt4, blocks=blocks, options={"stop": "6"}
+            client, litellm, blocks=blocks, options={"stop": "6"}
         )
         assert len(new_blocks) == 1
         assert new_blocks[0].text.strip() == "5"
@@ -69,7 +69,7 @@ def test_stopwords():
 
 def test_functions():
     with Steamship.temporary_workspace() as client:
-        gpt4 = GPT4Plugin(client=client, config={})
+        litellm = LiteLLMPlugin(client=client, config={})
 
         blocks = [
             Block(
@@ -86,7 +86,7 @@ def test_functions():
 
         _, new_blocks = run_test_streaming(
             client,
-            gpt4,
+            litellm,
             blocks=blocks,
             options={
                 "functions": [
@@ -112,7 +112,7 @@ def test_functions():
 
 def test_functions_function_message():
     with Steamship.temporary_workspace() as client:
-        gpt4 = GPT4Plugin(client=client, config={})
+        litellm = LiteLLMPlugin(client=client, config={})
 
         blocks = [
             Block(
@@ -138,7 +138,7 @@ def test_functions_function_message():
 
         _, new_blocks = run_test_streaming(
             client,
-            gpt4,
+            litellm,
             blocks=blocks,
             options={
                 "functions": [
@@ -165,7 +165,7 @@ def test_functions_function_message():
 
 def test_default_prompt():
     with Steamship.temporary_workspace() as client:
-        gpt4 = GPT4Plugin(
+        litellm = LiteLLMPlugin(
             client=client,
             config={
                 "openai_api_key": "",
@@ -184,7 +184,7 @@ def test_default_prompt():
         ]
 
         _, new_blocks = run_test_streaming(
-            client, gpt4, blocks=blocks, options={"stop": "6"}
+            client, litellm, blocks=blocks, options={"stop": "6"}
         )
         assert len(new_blocks) == 1
         assert new_blocks[0].text.strip() == "YIKES!"
@@ -192,7 +192,7 @@ def test_default_prompt():
 
 def test_flagged_prompt():
     with Steamship.temporary_workspace() as client:
-        gpt4 = GPT4Plugin(client=client, config={"openai_api_key": ""})
+        litellm = LiteLLMPlugin(client=client, config={"openai_api_key": ""})
 
         blocks = [
             Block(
@@ -202,28 +202,28 @@ def test_flagged_prompt():
             ),
         ]
         with pytest.raises(SteamshipError):
-            _, _ = run_test_streaming(client, gpt4, blocks=blocks, options={})
+            _, _ = run_test_streaming(client, litellm, blocks=blocks, options={})
 
 
 def test_invalid_model_for_billing():
     with pytest.raises(SteamshipError) as e:
-        _ = GPT4Plugin(
+        _ = LiteLLMPlugin(
             config={"model": "a model that does not exist", "openai_api_key": ""}
         )
     assert "This plugin cannot be used with model" in str(e)
 
 def test_cant_override_model():
     with Steamship.temporary_workspace() as client:
-        gpt4 = GPT4Plugin(
+        litellm = LiteLLMPlugin(
             config={}
         )
         with pytest.raises(SteamshipError) as e:
-            _, _ = run_test_streaming(client, gpt4, blocks=[Block(text="yo")], options={"model":"gpt-3.5-turbo"})
+            _, _ = run_test_streaming(client, litellm, blocks=[Block(text="yo")], options={"model":"gpt-3.5-turbo"})
         assert "Model may not be overridden in options" in str(e)
 
 def test_streaming_generation():
     with Steamship.temporary_workspace() as client:
-        gpt4 = GPT4Plugin(client=client, config={})
+        litellm = LiteLLMPlugin(client=client, config={})
 
         blocks = [
             Block(
@@ -234,7 +234,7 @@ def test_streaming_generation():
         ]
 
         result_usage, result_blocks = run_test_streaming(
-            client, gpt4, blocks=blocks, options={"n": 3}
+            client, litellm, blocks=blocks, options={"n": 3}
         )
         result_texts = [block.text for block in result_blocks]
 
@@ -253,7 +253,7 @@ def test_streaming_generation():
 
 def test_streaming_generation_with_moderation():
     with Steamship.temporary_workspace() as client:
-        gpt4 = GPT4Plugin(client=client, config={})
+        litellm = LiteLLMPlugin(client=client, config={})
 
         file = File.create(client, blocks=[
             Block(
@@ -263,7 +263,7 @@ def test_streaming_generation_with_moderation():
             ),
         ])
 
-        blocks_to_allocate = gpt4.determine_output_block_types(
+        blocks_to_allocate = litellm.determine_output_block_types(
             PluginRequest(data=RawBlockAndTagPluginInput(blocks=file.blocks, options={"n": 1}))
         )
 
@@ -284,7 +284,7 @@ def test_streaming_generation_with_moderation():
         assert file.blocks[1].stream_state == "started"
 
         with pytest.raises(SteamshipError):
-            gpt4.run(
+            litellm.run(
                 PluginRequest(
                     data=RawBlockAndTagPluginInputWithPreallocatedBlocks(
                         blocks=file.blocks, options={"n": 1}, output_blocks=output_blocks
@@ -303,7 +303,7 @@ def test_streaming_generation_with_moderation():
             raw_text = file.blocks[1].raw()
 
 def run_test_streaming(
-    client: Steamship, plugin: GPT4Plugin, blocks: [Block], options: dict
+    client: Steamship, plugin: LiteLLMPlugin, blocks: [Block], options: dict
 ) -> ([UsageReport], [Block]):
     blocks_to_allocate = plugin.determine_output_block_types(
         PluginRequest(data=RawBlockAndTagPluginInput(blocks=blocks, options=options))
@@ -334,7 +334,7 @@ def run_test_streaming(
 
 def test_multimodal_functions_with_blocks():
     with Steamship.temporary_workspace() as steamship:
-        gpt4 = GPT4Plugin(client=steamship, config={})
+        litellm = LiteLLMPlugin(client=steamship, config={})
         blocks = [
             Block(
                 text="You are a helpful AI assistant.",
@@ -376,7 +376,7 @@ def test_multimodal_functions_with_blocks():
 
         _, new_blocks = run_test_streaming(
             steamship,
-            gpt4,
+            litellm,
             blocks=blocks,
             options={
                 "functions": [
@@ -437,7 +437,7 @@ def fetch_result_text(block: Block) -> str:
 
 
 def test_prepare_messages():
-    gpt4 = GPT4Plugin(
+    litellm = LiteLLMPlugin(
         config={},
     )
 
@@ -473,7 +473,7 @@ def test_prepare_messages():
         )
     ]
 
-    messages = gpt4.prepare_messages(blocks=blocks)
+    messages = litellm.prepare_messages(blocks=blocks)
 
     expected_messages = [
         {'role': 'system', 'content': 'You are a helpful AI assistant.\n\nNOTE: Some functions return images, video, and audio files. These multimedia files will be represented in messages as\nUUIDs for Steamship Blocks. When responding directly to a user, you SHOULD print the Steamship Blocks for the images,\nvideo, or audio as follows: `Block(UUID for the block)`.\n\nExample response for a request that generated an image:\nHere is the image you requested: Block(288A2CA1-4753-4298-9716-53C1E42B726B).\n\nOnly use the functions you have been provided with.\n'},
