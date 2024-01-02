@@ -1,6 +1,6 @@
-# OpenAI GPT-4 Plugin for Steamship
+# LiteLLM Plugin for Steamship for OpenAI compatibility
 
-This plugin provides access to OpenAI's GPT-4 language model for text generation.
+This plugin provides access to LiteLLM's language model translation to OpenAI format for text generation.
 
 ## Usage
 
@@ -11,8 +11,8 @@ Use of this plugin is subject to OpenAI's [Terms of Use](https://openai.com/poli
 #### Basic
 
 ```python
-gpt4 = steamship.use_plugin("gpt-4")
-task = gpt4.generate(text=prompt)
+litellm = steamship.use_plugin("litellm")
+task = litellm.generate(text=prompt)
 task.wait()
 for block in task.output.blocks:
     print(block.text)
@@ -21,8 +21,8 @@ for block in task.output.blocks:
 #### With Runtime Parameters
 
 ```python
-gpt4 = steamship.use_plugin("gpt-4")
-task = gpt4.generate(text=prompt, options={"stop": ["6", "7"]})
+litellm = steamship.use_plugin("litellm")
+task = litellm.generate(text=prompt, options={"stop": ["6", "7"]})
 task.wait()
 for block in task.output.blocks:
     print(block.text)
@@ -30,7 +30,7 @@ for block in task.output.blocks:
 
 ## Cost
 
-[Pricing page](https://www.steamship.com/plugins/gpt-4?tab=Pricing)
+[Pricing page](https://www.steamship.com/plugins/litellm?tab=Pricing)
 
 
 ## Developing this Plugin

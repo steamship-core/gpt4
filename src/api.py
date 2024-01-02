@@ -50,12 +50,12 @@ VALID_MODELS_FOR_BILLING = [
 ]
 
 
-class GPT4Plugin(StreamingGenerator):
+class LiteLLMPlugin(StreamingGenerator):
     """
-    Plugin for generating text using OpenAI's GPT-4 model.
+    Plugin for generating text using LiteLLM-supported models.
     """
 
-    class GPT4PluginConfig(Config):
+    class LiteLLMPluginConfig(Config):
         openai_api_key: str = Field(
             "",
             description="An openAI API key to use. If left default, will use Steamship's API key.",
@@ -113,9 +113,9 @@ class GPT4Plugin(StreamingGenerator):
 
     @classmethod
     def config_cls(cls) -> Type[Config]:
-        return cls.GPT4PluginConfig
+        return cls.LiteLLMPluginConfig
 
-    config: GPT4PluginConfig
+    config: LiteLLMPluginConfig
 
     def __init__(
         self,
@@ -200,8 +200,9 @@ class GPT4Plugin(StreamingGenerator):
         output_blocks: List[Block],
     ) -> List[UsageReport]:
         """Call the API to generate the next section of text."""
+        # TODO Fix
         logging.info(
-            f"Making OpenAI GPT-4 chat completion call on behalf of user with id: {user}"
+            f"Making LiteLLM call on behalf of user with id: {user}"
         )
         options = options or {}
         stopwords = options.get("stop", None)
