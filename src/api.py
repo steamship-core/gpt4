@@ -304,10 +304,12 @@ class LiteLLMPlugin(StreamingGenerator):
     def _reassemble_function_call(self, function_call_chunks: List[dict]) -> dict:
         result = {}
         for chunk in function_call_chunks:
-            for key in chunk.keys():
+            model = chunk.model_dump()
+            for key in model.keys():
                 if key not in result:
                     result[key] = ""
-                result[key] += chunk[key]
+                if model[key]:
+                    result[key] += model[key]
         return result
 
     def _calculate_usage(
