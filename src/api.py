@@ -218,10 +218,10 @@ class LiteLLMPlugin(StreamingGenerator):
             wait=wait_exponential_jitter(jitter=5),
             before_sleep=before_sleep_log(logging.root, logging.INFO),
             retry=(
-                retry_if_exception_type(openai.error.Timeout)
-                | retry_if_exception_type(openai.error.APIError)
-                | retry_if_exception_type(openai.error.APIConnectionError)
-                | retry_if_exception_type(openai.error.RateLimitError)
+                retry_if_exception_type(openai.APITimeoutError)
+                | retry_if_exception_type(openai.APIError)
+                | retry_if_exception_type(openai.APIConnectionError)
+                | retry_if_exception_type(openai.RateLimitError)
                 | retry_if_exception_type(
                     ConnectionError
                 )  # handle 104s that manifest as ConnectionResetError
@@ -352,7 +352,7 @@ class LiteLLMPlugin(StreamingGenerator):
             ]
         )
         moderation = litellm.moderation(input=input_text)
-        return moderation["results"][0]["flagged"]
+        return moderation.results[0].flagged
 
     def run(
         self, request: PluginRequest[RawBlockAndTagPluginInputWithPreallocatedBlocks]
