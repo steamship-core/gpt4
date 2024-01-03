@@ -4,7 +4,8 @@ This plugin provides access to LiteLLM's language model translation to OpenAI fo
 
 ## Usage
 
-Use of this plugin is subject to OpenAI's [Terms of Use](https://openai.com/policies/terms-of-use).
+Use of this plugin is subject to individual models' terms of use, including but not limited to:
+- OpenAI's [Terms of Use](https://openai.com/policies/terms-of-use).
 
 ## Examples
 
