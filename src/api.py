@@ -1,12 +1,13 @@
 import json
 import logging
+import os
 import time
 from typing import Any, Dict, List, Optional, Type
 
+import litellm
 import openai
 import tiktoken
 from pydantic import Field
-
 from steamship import Steamship, Block, Tag, SteamshipError, MimeTypes
 from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey, ChatTag
 from steamship.invocable import Config, InvocableResponse, InvocationContext
@@ -66,7 +67,7 @@ class LiteLLMPlugin(StreamingGenerator):
         )
         model: Optional[str] = Field(
             "gpt-4-0613",
-            description="The OpenAI model to use. Can be a pre-existing fine-tuned model.",
+            description="The model name to use. Can be a pre-existing fine-tuned model.",
         )
         temperature: Optional[float] = Field(
             0.4,
@@ -98,7 +99,7 @@ class LiteLLMPlugin(StreamingGenerator):
         )
         request_timeout: Optional[float] = Field(
             600,
-            description="Timeout for requests to OpenAI completion API. Default is 600 seconds.",
+            description="Timeout in seconds for requests to the completion API. Default is 600 seconds.",
         )
         n: Optional[int] = Field(
             1, description="How many completions to generate for each prompt."
@@ -124,13 +125,15 @@ class LiteLLMPlugin(StreamingGenerator):
         context: InvocationContext = None,
     ):
         # Load original api key before it is read from TOML, so we know to restrict models for billing
+        if config.get("n") != 1:
+            raise SteamshipError("There is currently a known bug with this plugin and config value n != 1.")
         original_api_key = config.get("openai_api_key", "")
         super().__init__(client, config, context)
         if original_api_key == "" and self.config.model not in VALID_MODELS_FOR_BILLING:
             raise SteamshipError(
                 f"This plugin cannot be used with model {self.config.model} while using Steamship's API key. Valid models are {VALID_MODELS_FOR_BILLING}"
             )
-        openai.api_key = self.config.openai_api_key
+        os.environ["OPENAI_API_KEY"] = self.config.openai_api_key
 
     def prepare_message(self, block: Block) -> Optional[Dict[str, str]]:
         role = None
@@ -217,10 +220,10 @@ class LiteLLMPlugin(StreamingGenerator):
             wait=wait_exponential_jitter(jitter=5),
             before_sleep=before_sleep_log(logging.root, logging.INFO),
             retry=(
-                retry_if_exception_type(openai.error.Timeout)
-                | retry_if_exception_type(openai.error.APIError)
-                | retry_if_exception_type(openai.error.APIConnectionError)
-                | retry_if_exception_type(openai.error.RateLimitError)
+                retry_if_exception_type(openai.APITimeoutError)
+                | retry_if_exception_type(openai.APIError)
+                | retry_if_exception_type(openai.APIConnectionError)
+                | retry_if_exception_type(openai.RateLimitError)
                 | retry_if_exception_type(
                     ConnectionError
                 )  # handle 104s that manifest as ConnectionResetError
@@ -243,11 +246,11 @@ class LiteLLMPlugin(StreamingGenerator):
             if functions:
                 kwargs = {**kwargs, "functions": functions}
 
-            logging.info("calling open ai chatcompletion create",
+            logging.info("calling litellm.completion",
                          extra={"messages": messages, "functions": functions})
-            return openai.ChatCompletion.create(**kwargs)
+            return litellm.completion(**kwargs)
 
-        openai_result = _generate_with_retry()
+        litellm_result = _generate_with_retry()
         logging.info(
             "Retry statistics: " + json.dumps(_generate_with_retry.retry.statistics)
         )
@@ -260,7 +263,7 @@ class LiteLLMPlugin(StreamingGenerator):
         returned_function_parts = [  # did each result return a function
             [] for _ in range(self.config.n)
         ]
-        for chunk in openai_result:
+        for chunk in litellm_result:
             if id := chunk.get("id"):
                 completion_id = id
             for chunk_choice in chunk["choices"]:
@@ -303,10 +306,12 @@ class LiteLLMPlugin(StreamingGenerator):
     def _reassemble_function_call(self, function_call_chunks: List[dict]) -> dict:
         result = {}
         for chunk in function_call_chunks:
-            for key in chunk.keys():
+            model = chunk.model_dump()
+            for key in model.keys():
                 if key not in result:
                     result[key] = ""
-                result[key] += chunk[key]
+                if model[key]:
+                    result[key] += model[key]
         return result
 
     def _calculate_usage(
@@ -350,8 +355,8 @@ class LiteLLMPlugin(StreamingGenerator):
                 for value in role_dict.values()
             ]
         )
-        moderation = openai.Moderation.create(input=input_text)
-        return moderation["results"][0]["flagged"]
+        moderation = litellm.moderation(input=input_text)
+        return moderation.results[0].flagged
 
     def run(
         self, request: PluginRequest[RawBlockAndTagPluginInputWithPreallocatedBlocks]
@@ -369,11 +374,11 @@ class LiteLLMPlugin(StreamingGenerator):
                         block.abort_stream()
             except BaseException as ex:
                 raise SteamshipError(
-                    "Sorry, this content is flagged as inappropriate by OpenAI. Additionally, we were unable to abort the block stream.",
+                    "Sorry, this content is flagged as inappropriate. Additionally, we were unable to abort the block stream.",
                     error=ex
                 )
             raise SteamshipError(
-                "Sorry, this content is flagged as inappropriate by OpenAI."
+                "Sorry, this content is flagged as inappropriate."
             )
         user_id = self.context.user_id if self.context is not None else "testing"
         usage_reports = self.generate_with_retry(
