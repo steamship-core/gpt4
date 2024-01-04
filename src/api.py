@@ -125,6 +125,8 @@ class LiteLLMPlugin(StreamingGenerator):
         context: InvocationContext = None,
     ):
         # Load original api key before it is read from TOML, so we know to restrict models for billing
+        if config.get("n") != 1:
+            raise SteamshipError("There is currently a known bug with this plugin and config value n != 1.")
         original_api_key = config.get("openai_api_key", "")
         super().__init__(client, config, context)
         if original_api_key == "" and self.config.model not in VALID_MODELS_FOR_BILLING:
