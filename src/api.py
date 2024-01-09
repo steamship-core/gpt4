@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Type
 
 import openai
 import tiktoken
+from litellm import completion_cost
 from pydantic import Field
 
 from steamship import Steamship, Block, Tag, SteamshipError, MimeTypes
@@ -296,7 +297,7 @@ class LiteLLMPlugin(StreamingGenerator):
         for output_block in output_blocks:
             output_block.finish_stream()
 
-        usage_reports = self._calculate_usage(messages, output_texts, completion_id)
+        usage_reports = self._calculate_usage_from_completion(litellm_result, completion_id)
 
         return usage_reports
 
@@ -309,37 +310,16 @@ class LiteLLMPlugin(StreamingGenerator):
                 result[key] += chunk[key]
         return result
 
-    def _calculate_usage(
-        self,
-        messages: List[Dict[str, str]],
-        output_texts: List[str],
-        completion_id: str,
-    ) -> [UsageReport]:
-        # for token usage tracking, we need to include not just the token usage, but also completion id
-        # that will allow proper usage aggregation for n > 1 cases
-        encoding = tiktoken.encoding_for_model(self.config.model)
-        output_tokens = sum([len(encoding.encode(text)) for text in output_texts])
-        prompt_tokens = sum(
-            [
-                len(encoding.encode(message.get("content", "") or ""))
-                for message in messages
-            ]
-        )
-        usage_reports = [
+    def _calculate_usage_from_completion(self, completion_response, completion_id) -> [UsageReport]:
+        cost = completion_cost(completion_response=completion_response)
+        return [
             UsageReport(
                 operation_type=OperationType.RUN,
-                operation_unit=OperationUnit.PROMPT_TOKENS,
-                operation_amount=prompt_tokens,
-                audit_id=completion_id,
-            ),
-            UsageReport(
-                operation_type=OperationType.RUN,
-                operation_unit=OperationUnit.SAMPLED_TOKENS,
-                operation_amount=output_tokens,
-                audit_id=completion_id,
-            ),
+                operation_unit=OperationUnit.UNITS,
+                operation_amount=int(cost * 10_000_000_000_000),
+                audit_id=completion_id
+            )
         ]
-        return usage_reports
 
     @staticmethod
     def _flagged(messages: List[Dict[str, str]]) -> bool:
