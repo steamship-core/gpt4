@@ -1,13 +1,11 @@
 import json
 import logging
 import os
-import time
 from typing import Any, Dict, List, Optional, Type
 
 import litellm
 import openai
-import tiktoken
-from litellm import completion_cost
+from litellm import completion_cost, get_llm_provider
 from pydantic import Field
 from steamship import Steamship, Block, Tag, SteamshipError, MimeTypes
 from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey, ChatTag
@@ -35,21 +33,37 @@ from tenacity import (
     retry_if_exception_type,
     stop_after_attempt,
     before_sleep_log,
-    wait_exponential_jitter,
+    wait_exponential_jitter, retry_if_exception,
 )
 
-VALID_MODELS_FOR_BILLING = [
-    "gpt-4",
-    "gpt-4-0314",
-    "gpt-4-0613",
-    "gpt-4-32k",
-    "gpt-4-32k-0613",
-    "gpt-3.5-turbo",
-    "gpt-3.5-turbo-0613",
-    "gpt-3.5-turbo-16k",
-    "gpt-3.5-turbo-16k-0613",
-    "gpt-4-1106-preview"
-]
+
+class BillingCallback:
+    def __init__(self):
+        self.cost = None
+        self.completion_response = None
+        self.original_response = None
+
+    def __call__(self, kwargs, completion_response, start_time, end_time):
+        if "complete_streaming_response" in kwargs:
+            completion_response = kwargs["complete_streaming_response"]
+            self.cost = litellm.completion_cost(completion_response)
+            self.completion_response = completion_response
+        if "original_response" in kwargs and not self.cost:
+            original_response = kwargs["original_response"]
+            self.cost = litellm.completion_cost(original_response)
+            self.original_response = original_response
+
+    def usage(self, completion_id: str) -> [UsageReport]:
+        while self.cost is None:
+            pass
+        return [
+            UsageReport(
+                operation_type=OperationType.RUN,
+                operation_unit=OperationUnit.UNITS,
+                operation_amount=int(self.cost * 10_000_000_000_000),
+                audit_id=completion_id
+            )
+        ]
 
 
 class LiteLLMPlugin(StreamingGenerator):
@@ -58,9 +72,11 @@ class LiteLLMPlugin(StreamingGenerator):
     """
 
     class LiteLLMPluginConfig(Config):
-        openai_api_key: str = Field(
+        litellm_env: str = Field(
             "",
-            description="An openAI API key to use. If left default, will use Steamship's API key.",
+            description="LiteLLM provider environment, in the form <key>:<value>[;<key>:<value>...].  See LiteLLM "
+                        "documentation for supported variables.  Params must end with _API_KEY, and in the case of "
+                        "'AZURE', _API_VERSION, or _API_BASE"
         )
         max_tokens: int = Field(
             256,
@@ -98,10 +114,6 @@ class LiteLLMPlugin(StreamingGenerator):
         max_retries: int = Field(
             8, description="Maximum number of retries to make when generating."
         )
-        request_timeout: Optional[float] = Field(
-            600,
-            description="Timeout in seconds for requests to the completion API. Default is 600 seconds.",
-        )
         n: Optional[int] = Field(
             1, description="How many completions to generate for each prompt."
         )
@@ -125,16 +137,22 @@ class LiteLLMPlugin(StreamingGenerator):
         config: Dict[str, Any] = None,
         context: InvocationContext = None,
     ):
-        # Load original api key before it is read from TOML, so we know to restrict models for billing
-        if config.get("n") != 1:
-            raise SteamshipError("There is currently a known bug with this plugin and config value n != 1.")
-        original_api_key = config.get("openai_api_key", "")
         super().__init__(client, config, context)
-        if original_api_key == "" and self.config.model not in VALID_MODELS_FOR_BILLING:
-            raise SteamshipError(
-                f"This plugin cannot be used with model {self.config.model} while using Steamship's API key. Valid models are {VALID_MODELS_FOR_BILLING}"
-            )
-        os.environ["OPENAI_API_KEY"] = self.config.openai_api_key
+        if config.get("n", 1) != 1:
+            raise SteamshipError("There is currently a known bug with this plugin and config value n != 1.")
+
+        self.apply_env(self.config.litellm_env)
+
+    @classmethod
+    def apply_env(cls, env_config: str):
+        for kv_pair in env_config.split(";"):
+            kv = kv_pair.split(":")
+            if len(kv) != 2:
+                raise SteamshipError("litellm_config must be of the form <key>:<value>[;<key>:<value>...]")
+            k, v = kv
+            if not k.endswith("_API_KEY") or k.endswith("_API_BASE") or k.endswith("_API_VERSION"):
+                raise SteamshipError("litellm environment keys must end with _API_KEY, _API_BASE, or _API_VERSION")
+            os.environ[k] = v
 
     def prepare_message(self, block: Block) -> Optional[Dict[str, str]]:
         role = None
@@ -212,8 +230,7 @@ class LiteLLMPlugin(StreamingGenerator):
         stopwords = options.get("stop", None)
         functions = options.get("functions", None)
 
-        # record the time before the request is sent
-        start_time = time.time()
+        billing_callback = BillingCallback()
 
         @retry(
             reraise=True,
@@ -222,7 +239,7 @@ class LiteLLMPlugin(StreamingGenerator):
             before_sleep=before_sleep_log(logging.root, logging.INFO),
             retry=(
                 retry_if_exception_type(openai.APITimeoutError)
-                | retry_if_exception_type(openai.APIError)
+                | retry_if_exception(lambda e: isinstance(e, openai.APIError) and not ("does not support parameters" in e.message))
                 | retry_if_exception_type(openai.APIConnectionError)
                 | retry_if_exception_type(openai.RateLimitError)
                 | retry_if_exception_type(
@@ -247,10 +264,18 @@ class LiteLLMPlugin(StreamingGenerator):
             if functions:
                 kwargs = {**kwargs, "functions": functions}
 
+            _, provider, _, _ = get_llm_provider(self.config.model)
+            if provider == "replicate":
+                # TODO This probably can be sidestepped by just using options for this.
+                del kwargs["presence_penalty"]
+                del kwargs["frequency_penalty"]
+                del kwargs["user"]
+
             logging.info("calling litellm.completion",
                          extra={"messages": messages, "functions": functions})
             return litellm.completion(**kwargs)
 
+        litellm.success_callback = [billing_callback]
         litellm_result = _generate_with_retry()
         logging.info(
             "Retry statistics: " + json.dumps(_generate_with_retry.retry.statistics)
@@ -300,9 +325,7 @@ class LiteLLMPlugin(StreamingGenerator):
         for output_block in output_blocks:
             output_block.finish_stream()
 
-        usage_reports = self._calculate_usage_from_completion(litellm_result, completion_id)
-
-        return usage_reports
+        return billing_callback.usage(completion_id)
 
     def _reassemble_function_call(self, function_call_chunks: List[dict]) -> dict:
         result = {}
@@ -374,8 +397,8 @@ class LiteLLMPlugin(StreamingGenerator):
         self, request: PluginRequest[RawBlockAndTagPluginInput]
     ) -> InvocableResponse[BlockTypePluginOutput]:
 
-        if request.data.options is not None and 'model' in request.data.options:
-            raise SteamshipError("Model may not be overridden in options")
+        if request.data.options is not None and 'litellm_env' in request.data.options:
+            raise SteamshipError("Environment (litellm_env) may not be overridden in options")
 
         self.config.extend_with_dict(request.data.options, overwrite=True)
 

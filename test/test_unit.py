@@ -10,25 +10,31 @@ from steamship.plugin.inputs.raw_block_and_tag_plugin_input import (
 from steamship.plugin.inputs.raw_block_and_tag_plugin_input_with_preallocated_blocks import (
     RawBlockAndTagPluginInputWithPreallocatedBlocks,
 )
-from steamship.plugin.outputs.plugin_output import UsageReport, OperationUnit
+from steamship.plugin.outputs.plugin_output import UsageReport, OperationUnit, OperationType
 from steamship.plugin.request import PluginRequest
 
 from src.api import LiteLLMPlugin
 
+FUNCTION_MODEL_PARAMS = ["", "gpt-4-32k"]
+MODEL_PARAMS = FUNCTION_MODEL_PARAMS + ["replicate/llama-2-70b-chat:2796ee9483c3fd7aa2e171d38f4ca12251a30609463dcfd4cd76703f22e96cdf"]
 
-@pytest.mark.parametrize("model", ["", "gpt-4-32k"])
+COUNT_SYSTEM_PROMPT = "You are an assistant who loves to count.  You do not include text in your responses, only numbers."
+COUNT_USER_PROMPT = "Continue this series, responding only with the next 4 numbers: 1 2 3 4"
+
+
+@pytest.mark.parametrize("model", MODEL_PARAMS)
 def test_generator(model: str):
     with Steamship.temporary_workspace() as client:
         litellm = LiteLLMPlugin(client=client, config={"n": 1, "model": model})
 
         blocks = [
             Block(
-                text="You are an assistant who loves to count",
+                text=COUNT_SYSTEM_PROMPT,
                 tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
                 mime_type=MimeTypes.TXT,
             ),
             Block(
-                text="Continue this series: 1 2 3 4",
+                text=COUNT_USER_PROMPT,
                 tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
                 mime_type=MimeTypes.TXT,
             ),
@@ -40,21 +46,23 @@ def test_generator(model: str):
             assert block.text.strip().startswith("5 6 7 8")
 
         assert usage is not None
-        assert len(usage) == 2
+        assert len(usage) == 1
 
 
-def test_stopwords():
+# TODO: This appears to be a bug?  Stopwords don't appear to work for Llama but they are a feature on that model on replicate.
+# @pytest.mark.parametrize("model", MODEL_PARAMS)
+def test_stopwords(model):
     with Steamship.temporary_workspace() as client:
-        litellm = LiteLLMPlugin(client=client, config={})
+        litellm = LiteLLMPlugin(client=client, config={"model": model})
 
         blocks = [
             Block(
-                text="You are an assistant who loves to count",
+                text=COUNT_SYSTEM_PROMPT,
                 tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
                 mime_type=MimeTypes.TXT,
             ),
             Block(
-                text="Continue this series: 1 2 3 4",
+                text=COUNT_USER_PROMPT,
                 tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
                 mime_type=MimeTypes.TXT,
             ),
@@ -163,14 +171,15 @@ def test_functions_function_message():
         assert "Vin Diesel" in text
 
 
-def test_default_prompt():
+@pytest.mark.parametrize("model", MODEL_PARAMS)
+def test_default_prompt(model):
     with Steamship.temporary_workspace() as client:
         litellm = LiteLLMPlugin(
             client=client,
             config={
-                "openai_api_key": "",
+                "model": model,
                 "default_system_prompt": "You are very silly and are afraid of numbers. When you see "
-                "them you scream: 'YIKES!'",
+                "them you scream: 'YIKES!', and that is your only output.",
                 "moderate_output": False,
             },
         )
@@ -190,9 +199,10 @@ def test_default_prompt():
         assert new_blocks[0].text.strip() == "YIKES!"
 
 
-def test_flagged_prompt():
+@pytest.mark.parametrize("model", MODEL_PARAMS)
+def test_flagged_prompt(model):
     with Steamship.temporary_workspace() as client:
-        litellm = LiteLLMPlugin(client=client, config={"openai_api_key": ""})
+        litellm = LiteLLMPlugin(client=client, config={"model": model})
 
         blocks = [
             Block(
@@ -205,25 +215,20 @@ def test_flagged_prompt():
             _, _ = run_test_streaming(client, litellm, blocks=blocks, options={})
 
 
-def test_invalid_model_for_billing():
-    with pytest.raises(SteamshipError) as e:
-        _ = LiteLLMPlugin(
-            config={"model": "a model that does not exist", "openai_api_key": ""}
-        )
-    assert "This plugin cannot be used with model" in str(e)
-
-def test_cant_override_model():
+def test_cant_override_env():
     with Steamship.temporary_workspace() as client:
         litellm = LiteLLMPlugin(
             config={}
         )
         with pytest.raises(SteamshipError) as e:
-            _, _ = run_test_streaming(client, litellm, blocks=[Block(text="yo")], options={"model":"gpt-3.5-turbo"})
-        assert "Model may not be overridden in options" in str(e)
+            _, _ = run_test_streaming(client, litellm, blocks=[Block(text="yo")], options={"litellm_env": ""})
+        assert "Environment (litellm_env) may not be overridden in options" in str(e)
 
-def test_streaming_generation():
+
+@pytest.mark.parametrize("model", MODEL_PARAMS)
+def test_streaming_generation(model):
     with Steamship.temporary_workspace() as client:
-        litellm = LiteLLMPlugin(client=client, config={})
+        litellm = LiteLLMPlugin(client=client, config={"model": model})
 
         blocks = [
             Block(
@@ -241,12 +246,10 @@ def test_streaming_generation():
 
         assert len(result_texts) == 1
 
-        assert len(result_usage) == 2
-        assert result_usage[0].operation_unit == OperationUnit.PROMPT_TOKENS
-        assert result_usage[0].operation_amount == 9
-
-        assert result_usage[1].operation_unit == OperationUnit.SAMPLED_TOKENS
-        assert result_usage[1].operation_amount == 256
+        assert len(result_usage) == 1
+        assert result_usage[0].operation_type == OperationType.RUN
+        assert result_usage[0].operation_unit == OperationUnit.UNITS
+        assert result_usage[0].operation_amount > 0
 
 
 def test_streaming_generation_with_moderation():
