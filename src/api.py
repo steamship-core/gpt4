@@ -41,17 +41,12 @@ class BillingCallback:
     def __init__(self):
         self.cost = None
         self.completion_response = None
-        self.original_response = None
 
     def __call__(self, kwargs, completion_response, start_time, end_time):
         if "complete_streaming_response" in kwargs:
             completion_response = kwargs["complete_streaming_response"]
             self.cost = litellm.completion_cost(completion_response)
             self.completion_response = completion_response
-        if "original_response" in kwargs and not self.cost:
-            original_response = kwargs["original_response"]
-            self.cost = litellm.completion_cost(original_response)
-            self.original_response = original_response
 
     def usage(self, completion_id: str) -> [UsageReport]:
         while self.cost is None:
@@ -64,6 +59,17 @@ class BillingCallback:
                 audit_id=completion_id
             )
         ]
+
+
+class NoopBilling(BillingCallback):
+    def __init__(self):
+        super().__init__()
+
+    def __call__(self, *args, **kwargs):
+        pass
+
+    def usage(self, completion_id: str) -> [UsageReport]:
+        return []
 
 
 class LiteLLMPlugin(StreamingGenerator):
@@ -137,11 +143,14 @@ class LiteLLMPlugin(StreamingGenerator):
         config: Dict[str, Any] = None,
         context: InvocationContext = None,
     ):
+        # Load original env before it is read from TOML, so we know whether to bill usage or not.
+        original_env = config.get("litellm_env", "")
         super().__init__(client, config, context)
         if config.get("n", 1) != 1:
             raise SteamshipError("There is currently a known bug with this plugin and config value n != 1.")
 
         self.apply_env(self.config.litellm_env)
+        self.steamship_billing = (original_env == "")
 
     @classmethod
     def apply_env(cls, env_config: str):
@@ -230,7 +239,7 @@ class LiteLLMPlugin(StreamingGenerator):
         stopwords = options.get("stop", None)
         functions = options.get("functions", None)
 
-        billing_callback = BillingCallback()
+        billing_callback = BillingCallback() if self.steamship_billing else NoopBilling()
 
         @retry(
             reraise=True,
