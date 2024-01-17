@@ -1,0 +1,101 @@
+{
+	"type": "plugin",
+	"handle": "litellm",
+	"version": "0.0.1",
+	"description": "",
+	"author": "steamship",
+	"entrypoint": "Unused",
+	"public": true,
+	"plugin": {
+		"isTrainable": false,
+		"transport": "jsonOverHttp",
+		"type": "generator",
+		"streaming": true
+	},
+	"build_config": {
+		"ignore": [
+			"tests",
+			"examples"
+		]
+	},
+	"configTemplate": {
+		"litellm_env": {
+			"type": "string",
+			"description": "LiteLLM provider environment, in the form <key>:<value>[;<key>:<value>...].  See LiteLLM documentation for supported variables.  Params must end with _API_KEY, and in the case of 'AZURE', _API_VERSION, or _API_BASE",
+			"default": ""
+		},
+		"max_tokens": {
+			"type": "number",
+			"description": "The maximum number of tokens to generate per request. Can be overridden in runtime options.",
+			"default": 256
+		},
+		"model": {
+			"type": "string",
+			"description": "The model name to use. Can be a pre-existing fine-tuned model.",
+			"default": "gpt-4-0613"
+		},
+		"temperature": {
+			"type": "number",
+			"description": "Controls randomness. Lower values produce higher likelihood / more predictable results; higher values produce more variety. Values between 0-1.",
+			"default": 0.4
+		},
+		"top_p": {
+			"type": "number",
+			"description": "Controls the nucleus sampling, where the model considers the results of the tokens with top_p probability mass. Values between 0-1.",
+			"default": 1
+		},
+		"presence_penalty": {
+			"type": "number",
+			"description": "Control how likely the model will reuse words. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics. Number between -2.0 and 2.0.",
+			"default": 0
+		},
+		"frequency_penalty": {
+			"type": "number",
+			"description": "Control how likely the model will reuse words. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim. Number between -2.0 and 2.0.",
+			"default": 0
+		},
+		"moderate_output": {
+			"type": "boolean",
+			"description": "Pass the generated output back through OpenAI's moderation endpoint and throw an exception if flagged.",
+			"default": true
+		},
+		"max_retries": {
+			"type": "number",
+			"description": "Maximum number of retries to make when generating.",
+			"default": 8
+		},
+		"n": {
+			"type": "number",
+			"description": "How many completions to generate for each prompt.",
+			"default": 1
+		},
+		"default_role": {
+			"type": "string",
+			"description": "The default role to use for a block that does not have a Tag of kind='role'",
+			"default": "user"
+		},
+		"default_system_prompt": {
+			"type": "string",
+			"description": "System prompt that will be prepended before every request",
+			"default": ""
+		}
+	},
+	"steamshipRegistry": {
+		"tagline": "",
+		"tagline2": null,
+		"usefulFor": null,
+		"videoUrl": null,
+		"githubUrl": null,
+		"demoUrl": null,
+		"blogUrl": null,
+		"jupyterUrl": null,
+		"authorGithub": "",
+		"authorName": "steamship",
+		"authorEmail": null,
+		"authorTwitter": null,
+		"authorUrl": null,
+		"tags": [
+			"Prompt API"
+		]
+	}
+}
