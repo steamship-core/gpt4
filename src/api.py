@@ -231,7 +231,6 @@ class LiteLLMPlugin(StreamingGenerator):
         output_blocks: List[Block],
     ) -> List[UsageReport]:
         """Call the API to generate the next section of text."""
-        # TODO Fix
         logging.info(
             f"Making LiteLLM call on behalf of user with id: {user}"
         )
