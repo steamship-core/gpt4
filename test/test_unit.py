@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from openai import OpenAIError
 
 from steamship import Block, Tag, MimeTypes, SteamshipError, File, Steamship
 from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey, ChatTag
@@ -489,3 +490,34 @@ def test_prepare_messages():
 
     for msg in messages:
         assert msg in expected_messages, f"could not find expected message: {msg}"
+
+
+def test_invalid_env():
+    with Steamship.temporary_workspace() as client:
+        with pytest.raises(SteamshipError) as e:
+            LiteLLMPlugin(
+                client=client, config={"litellm_env": "BAD_ENV:abfcd;OPENAI_API_KEY:abcdefghji"},
+            )
+        assert "litellm environment keys must end with _API_KEY, _API_BASE, or _API_VERSION" in str(e)
+        with pytest.raises(OpenAIError) as e:
+            # attempt to use openai without an openai key
+            litellm = LiteLLMPlugin(
+                client=client, config={"litellm_env": "REPLICATE_API_KEY:some_key"}
+            )
+
+            blocks = [
+                Block(
+                    text=COUNT_SYSTEM_PROMPT,
+                    tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
+                    mime_type=MimeTypes.TXT,
+                ),
+                Block(
+                    text=COUNT_USER_PROMPT,
+                    tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
+                    mime_type=MimeTypes.TXT,
+                ),
+            ]
+
+            run_test_streaming(client, litellm, blocks, options={})
+        assert ("The api_key client option must be set either by passing api_key to the client or by setting the "
+                "OPENAI_API_KEY environment variable") in str(e)
