@@ -1,4 +1,4 @@
-openai
-tenacity
-steamship @ git+https://github.com/steamship-core/python-client@openai-calls-to-litellm
-litellm
+openai==1.8.0
+tenacity==8.2.3
+steamship==2.17.33
+litellm==1.17.1
