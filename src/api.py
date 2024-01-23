@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import threading
 from typing import Any, Dict, List, Optional, Type
 
 import litellm
@@ -37,20 +38,24 @@ from tenacity import (
 )
 
 
+BILLING_LOCK_TIMEOUT_SECONDS = 10.0
+
 class BillingCallback:
     def __init__(self):
         self.cost = None
         self.completion_response = None
+        self.lock = threading.Lock()
+        assert self.lock.acquire(blocking=False), "Could not acquire billing lock"
 
     def __call__(self, kwargs, completion_response, start_time, end_time):
         if "complete_streaming_response" in kwargs:
             completion_response = kwargs["complete_streaming_response"]
             self.cost = litellm.completion_cost(completion_response)
             self.completion_response = completion_response
+            self.lock.release()
 
     def usage(self, completion_id: str) -> [UsageReport]:
-        while self.cost is None:
-            pass
+        assert self.lock.acquire(timeout=BILLING_LOCK_TIMEOUT_SECONDS), "Billing calculation timed out"
         return [
             UsageReport(
                 operation_type=OperationType.RUN,
@@ -63,7 +68,7 @@ class BillingCallback:
 
 class NoopBilling(BillingCallback):
     def __init__(self):
-        super().__init__()
+        pass
 
     def __call__(self, *args, **kwargs):
         pass
