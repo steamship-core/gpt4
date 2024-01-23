@@ -12,7 +12,7 @@ GENERATOR_HANDLE = "litellm"
     "model", ["", "gpt-4-32k", "gpt-4-1106-preview"]
 )
 def test_generator(model: str):
-    with Steamship.temporary_workspace() as steamship:
+    with Steamship.temporary_workspace(profile="steamshipProd") as steamship:
         litellm = steamship.use_plugin(GENERATOR_HANDLE, config={"model": model})
         file = File.create(
             steamship,
@@ -40,7 +40,7 @@ def test_generator(model: str):
 
 
 def test_generator_without_role():
-    with Steamship.temporary_workspace() as steamship:
+    with Steamship.temporary_workspace(profile="steamshipProd") as steamship:
         litellm = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(
             steamship,
@@ -55,7 +55,7 @@ def test_generator_without_role():
 
 
 def test_stopwords():
-    with Steamship.temporary_workspace() as steamship:
+    with Steamship.temporary_workspace(profile="steamshipProd") as steamship:
         litellm = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(
             steamship,
@@ -83,7 +83,7 @@ def test_stopwords():
 
 
 def test_functions():
-    with Steamship.temporary_workspace() as steamship:
+    with Steamship.temporary_workspace(profile="steamshipProd") as steamship:
         litellm = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(
             steamship,
@@ -127,7 +127,7 @@ def test_functions():
 
 
 def test_multimodal_functions_with_blocks():
-    with Steamship.temporary_workspace() as steamship:
+    with Steamship.temporary_workspace(profile="steamshipProd") as steamship:
         litellm = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(
             steamship,
@@ -218,7 +218,7 @@ def test_multimodal_functions_with_blocks():
 
 
 def test_functions_function_message():
-    with Steamship.temporary_workspace() as steamship:
+    with Steamship.temporary_workspace(profile="steamshipProd") as steamship:
         litellm = steamship.use_plugin(GENERATOR_HANDLE)
 
         file = File.create(

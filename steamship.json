@@ -5,7 +5,7 @@
 	"description": "",
 	"author": "steamship",
 	"entrypoint": "Unused",
-	"public": true,
+	"public": false,
 	"plugin": {
 		"isTrainable": false,
 		"transport": "jsonOverHttp",

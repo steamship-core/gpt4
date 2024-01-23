@@ -168,7 +168,7 @@ class LiteLLMPlugin(StreamingGenerator):
         for kv_pair in env_config.split(";"):
             kv = kv_pair.split(":")
             if len(kv) != 2:
-                raise SteamshipError("litellm_config must be of the form <key>:<value>[;<key>:<value>...]")
+                raise SteamshipError("litellm_env must be of the form <key>:<value>[;<key>:<value>...]")
             k, v = kv
             if not k.endswith("_API_KEY") or k.endswith("_API_BASE") or k.endswith("_API_VERSION"):
                 raise SteamshipError("litellm environment keys must end with _API_KEY, _API_BASE, or _API_VERSION")
