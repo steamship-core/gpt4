@@ -1,8 +1,11 @@
+import inspect
 import json
+import pathlib
 
 import pytest
+import toml
+from litellm import AuthenticationError
 from openai import OpenAIError
-
 from steamship import Block, Tag, MimeTypes, SteamshipError, File, Steamship
 from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey, ChatTag
 from steamship.plugin.inputs.raw_block_and_tag_plugin_input import (
@@ -16,8 +19,9 @@ from steamship.plugin.request import PluginRequest
 
 from src.api import LiteLLMPlugin
 
+LLAMA = "replicate/llama-2-70b-chat:2796ee9483c3fd7aa2e171d38f4ca12251a30609463dcfd4cd76703f22e96cdf"
 FUNCTION_MODEL_PARAMS = ["", "gpt-4-32k"]
-MODEL_PARAMS = FUNCTION_MODEL_PARAMS + ["replicate/llama-2-70b-chat:2796ee9483c3fd7aa2e171d38f4ca12251a30609463dcfd4cd76703f22e96cdf"]
+MODEL_PARAMS = FUNCTION_MODEL_PARAMS + [LLAMA]
 
 COUNT_SYSTEM_PROMPT = "You are an assistant who loves to count.  You do not include text in your responses, only numbers."
 COUNT_USER_PROMPT = "Continue this series, responding only with the next 4 numbers: 1 2 3 4"
@@ -521,3 +525,42 @@ def test_invalid_env():
             run_test_streaming(client, litellm, blocks, options={})
         assert ("The api_key client option must be set either by passing api_key to the client or by setting the "
                 "OPENAI_API_KEY environment variable") in str(e)
+
+
+def test_own_billing():
+    with Steamship.temporary_workspace() as client:
+        # Steal API key and pretend we're providing our own, but not replicate
+        local_secrets = str(pathlib.Path(inspect.getfile(test_own_billing)).parent.parent / "src" / ".steamship" / "secrets.toml")
+        secret_kwargs = toml.load(local_secrets)
+        secret_envs = LiteLLMPlugin.get_envs(secret_kwargs["litellm_env"])
+        test_env = {k: v for k, v in secret_envs.items() if k != "REPLICATE_API_KEY"}
+        test_env_str = ';'.join([f"{k}:{v}" for k, v in test_env.items()])
+
+        plugin = LiteLLMPlugin(
+            client=client, config={"litellm_env": test_env_str}
+        )
+        blocks = [
+            Block(
+                text=COUNT_SYSTEM_PROMPT,
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.SYSTEM)],
+                mime_type=MimeTypes.TXT,
+            ),
+            Block(
+                text=COUNT_USER_PROMPT,
+                tags=[Tag(kind=TagKind.ROLE, name=RoleTag.USER)],
+                mime_type=MimeTypes.TXT,
+            ),
+        ]
+        # Successfully use one provided API key, without usage billed.
+        usage, blocks = run_test_streaming(client, plugin, blocks, options={})
+        assert not usage
+
+        # Don't fall back to our billing if they didn't provide a key for another provider.
+        with pytest.raises(AuthenticationError):
+            run_test_streaming(client, plugin, blocks, options={"model": LLAMA})
+
+        # Don't allow mucking with the options to fall back to our key, envs are set only at config time.
+        with pytest.raises(SteamshipError) as e:
+            run_test_streaming(client, plugin, blocks, options={"litellm_env": ""})
+
+        assert "Environment (litellm_env) may not be overridden in options" in str(e)

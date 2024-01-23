@@ -152,8 +152,9 @@ class LiteLLMPlugin(StreamingGenerator):
         self.apply_env(self.config.litellm_env)
         self.steamship_billing = (original_env == "")
 
-    @classmethod
-    def apply_env(cls, env_config: str):
+    @staticmethod
+    def get_envs(env_config: str) -> {str: str}:
+        envs = {}
         for kv_pair in env_config.split(";"):
             kv = kv_pair.split(":")
             if len(kv) != 2:
@@ -161,6 +162,12 @@ class LiteLLMPlugin(StreamingGenerator):
             k, v = kv
             if not k.endswith("_API_KEY") or k.endswith("_API_BASE") or k.endswith("_API_VERSION"):
                 raise SteamshipError("litellm environment keys must end with _API_KEY, _API_BASE, or _API_VERSION")
+            envs[k] = v
+        return envs
+
+    @staticmethod
+    def apply_env(env_config: str):
+        for k, v in LiteLLMPlugin.get_envs(env_config).items():
             os.environ[k] = v
 
     def prepare_message(self, block: Block) -> Optional[Dict[str, str]]:
@@ -247,7 +254,10 @@ class LiteLLMPlugin(StreamingGenerator):
             before_sleep=before_sleep_log(logging.root, logging.INFO),
             retry=(
                 retry_if_exception_type(openai.APITimeoutError)
-                | retry_if_exception(lambda e: isinstance(e, openai.APIError) and not ("does not support parameters" in e.message))
+                | retry_if_exception(
+                    lambda e: isinstance(e, openai.APIError) and not
+                    ("does not support parameters" in e.message) and not
+                    (isinstance(e, openai.AuthenticationError)))
                 | retry_if_exception_type(openai.APIConnectionError)
                 | retry_if_exception_type(openai.RateLimitError)
                 | retry_if_exception_type(
