@@ -39,6 +39,11 @@ from tenacity import (
 
 
 BILLING_LOCK_TIMEOUT_SECONDS = 10.0
+# This is a massive multiplier, but we are going to handle the fractional cents pricing-side.
+# This is basically figured by going into the pricing data that I had for LiteLLM and finding the
+# maximum amount of significant figures for any costing and making sure we can capture that precision
+# in an int.
+PRICING_UNITS_MULTIPLIER = 10_000_000_000_000
 
 class BillingCallback:
     def __init__(self):
@@ -60,7 +65,7 @@ class BillingCallback:
             UsageReport(
                 operation_type=OperationType.RUN,
                 operation_unit=OperationUnit.UNITS,
-                operation_amount=int(self.cost * 10_000_000_000_000),
+                operation_amount=int(self.cost * PRICING_UNITS_MULTIPLIER),
                 audit_id=completion_id
             )
         ]
@@ -360,17 +365,6 @@ class LiteLLMPlugin(StreamingGenerator):
                 if model[key]:
                     result[key] += model[key]
         return result
-
-    def _calculate_usage_from_completion(self, completion_response, completion_id) -> [UsageReport]:
-        cost = completion_cost(completion_response=completion_response)
-        return [
-            UsageReport(
-                operation_type=OperationType.RUN,
-                operation_unit=OperationUnit.UNITS,
-                operation_amount=int(cost * 10_000_000_000_000),
-                audit_id=completion_id
-            )
-        ]
 
     @staticmethod
     def _flagged(messages: List[Dict[str, str]]) -> bool:

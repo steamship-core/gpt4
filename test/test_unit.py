@@ -7,7 +7,6 @@ import openai
 import pytest
 import toml
 from litellm import AuthenticationError
-from openai import OpenAIError
 from steamship import Block, Tag, MimeTypes, SteamshipError, File, Steamship
 from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey, ChatTag
 from steamship.plugin.inputs.raw_block_and_tag_plugin_input import (
