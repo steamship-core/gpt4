@@ -1,11 +1,11 @@
 {
 	"type": "plugin",
-	"handle": "gpt-4",
-	"version": "0.1.3",
+	"handle": "gpt-test-secrets",
+	"version": "0.0.1",
 	"description": "",
-	"author": "dave",
+	"author": "george-steamship",
 	"entrypoint": "Unused",
-	"public": true,
+	"public": false,
 	"plugin": {
 		"isTrainable": false,
 		"transport": "jsonOverHttp",
@@ -86,7 +86,7 @@
 		}
 	},
 	"steamshipRegistry": {
-		"tagline": "Complete prompts and chats with GPT-4",
+		"tagline": null,
 		"tagline2": null,
 		"usefulFor": null,
 		"videoUrl": null,
@@ -94,17 +94,13 @@
 		"demoUrl": null,
 		"blogUrl": null,
 		"jupyterUrl": null,
-		"authorGithub": "dkolas",
-		"authorName": "dkolas",
-		"authorEmail": "developers@steamship.com",
+		"authorGithub": null,
+		"authorName": "george-steamship",
+		"authorEmail": null,
 		"authorTwitter": null,
 		"authorUrl": null,
 		"tags": [
-			"GPT-4",
-			"Prompt Completion",
-			"LLM",
-			"GPT",
-			"OpenAI"
+			"Prompt API"
 		]
 	}
 }

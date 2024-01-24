@@ -7,7 +7,7 @@ from steamship import Block, File, Steamship, MimeTypes, Tag
 from steamship.data import TagKind
 from steamship.data.tags.tag_constants import RoleTag, TagValueKey
 
-GENERATOR_HANDLE = "gpt-4"
+GENERATOR_HANDLE = "gpt-test-secrets"
 
 @pytest.mark.parametrize(
     "model", ["", "gpt-4-32k", "gpt-4-1106-preview"]
