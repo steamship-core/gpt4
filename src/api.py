@@ -1,12 +1,13 @@
 import json
 import logging
-import time
+import os
+import threading
 from typing import Any, Dict, List, Optional, Type
 
+import litellm
 import openai
-import tiktoken
+from litellm import completion_cost, get_llm_provider
 from pydantic import Field
-
 from steamship import Steamship, Block, Tag, SteamshipError, MimeTypes
 from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey, ChatTag
 from steamship.invocable import Config, InvocableResponse, InvocationContext
@@ -33,32 +34,65 @@ from tenacity import (
     retry_if_exception_type,
     stop_after_attempt,
     before_sleep_log,
-    wait_exponential_jitter,
+    wait_exponential_jitter, retry_if_exception,
 )
 
-VALID_MODELS_FOR_BILLING = [
-    "gpt-4",
-    "gpt-4-0314",
-    "gpt-4-0613",
-    "gpt-4-32k",
-    "gpt-4-32k-0613",
-    "gpt-3.5-turbo",
-    "gpt-3.5-turbo-0613",
-    "gpt-3.5-turbo-16k",
-    "gpt-3.5-turbo-16k-0613",
-    "gpt-4-1106-preview"
-]
+
+BILLING_LOCK_TIMEOUT_SECONDS = 10.0
+# This is a massive multiplier, but we are going to handle the fractional cents pricing-side.
+# This is basically figured by going into the pricing data that I had for LiteLLM and finding the
+# maximum amount of significant figures for any costing and making sure we can capture that precision
+# in an int.
+PRICING_UNITS_MULTIPLIER = 10_000_000_000_000
+
+class BillingCallback:
+    def __init__(self):
+        self.cost = None
+        self.completion_response = None
+        self.lock = threading.Lock()
+        assert self.lock.acquire(blocking=False), "Could not acquire billing lock"
+
+    def __call__(self, kwargs, completion_response, start_time, end_time):
+        if "complete_streaming_response" in kwargs:
+            completion_response = kwargs["complete_streaming_response"]
+            self.cost = litellm.completion_cost(completion_response)
+            self.completion_response = completion_response
+            self.lock.release()
+
+    def usage(self, completion_id: str) -> [UsageReport]:
+        assert self.lock.acquire(timeout=BILLING_LOCK_TIMEOUT_SECONDS), "Billing calculation timed out"
+        return [
+            UsageReport(
+                operation_type=OperationType.RUN,
+                operation_unit=OperationUnit.UNITS,
+                operation_amount=int(self.cost * PRICING_UNITS_MULTIPLIER),
+                audit_id=completion_id
+            )
+        ]
 
 
-class GPT4Plugin(StreamingGenerator):
+class NoopBilling(BillingCallback):
+    def __init__(self):
+        pass
+
+    def __call__(self, *args, **kwargs):
+        pass
+
+    def usage(self, completion_id: str) -> [UsageReport]:
+        return []
+
+
+class LiteLLMPlugin(StreamingGenerator):
     """
-    Plugin for generating text using OpenAI's GPT-4 model.
+    Plugin for generating text using LiteLLM-supported models.
     """
 
-    class GPT4PluginConfig(Config):
-        openai_api_key: str = Field(
+    class LiteLLMPluginConfig(Config):
+        litellm_env: str = Field(
             "",
-            description="An openAI API key to use. If left default, will use Steamship's API key.",
+            description="LiteLLM provider environment, in the form <key>:<value>[;<key>:<value>...].  See LiteLLM "
+                        "documentation for supported variables.  Params must end with _API_KEY, and in the case of "
+                        "'AZURE', _API_VERSION, or _API_BASE"
         )
         max_tokens: int = Field(
             256,
@@ -66,7 +100,7 @@ class GPT4Plugin(StreamingGenerator):
         )
         model: Optional[str] = Field(
             "gpt-4-0613",
-            description="The OpenAI model to use. Can be a pre-existing fine-tuned model.",
+            description="The model name to use. Can be a pre-existing fine-tuned model.",
         )
         temperature: Optional[float] = Field(
             0.4,
@@ -96,10 +130,6 @@ class GPT4Plugin(StreamingGenerator):
         max_retries: int = Field(
             8, description="Maximum number of retries to make when generating."
         )
-        request_timeout: Optional[float] = Field(
-            600,
-            description="Timeout for requests to OpenAI completion API. Default is 600 seconds.",
-        )
         n: Optional[int] = Field(
             1, description="How many completions to generate for each prompt."
         )
@@ -113,9 +143,9 @@ class GPT4Plugin(StreamingGenerator):
 
     @classmethod
     def config_cls(cls) -> Type[Config]:
-        return cls.GPT4PluginConfig
+        return cls.LiteLLMPluginConfig
 
-    config: GPT4PluginConfig
+    config: LiteLLMPluginConfig
 
     def __init__(
         self,
@@ -123,14 +153,32 @@ class GPT4Plugin(StreamingGenerator):
         config: Dict[str, Any] = None,
         context: InvocationContext = None,
     ):
-        # Load original api key before it is read from TOML, so we know to restrict models for billing
-        original_api_key = config.get("openai_api_key", "")
+        # Load original env before it is read from TOML, so we know whether to bill usage or not.
+        original_env = config.get("litellm_env", "")
         super().__init__(client, config, context)
-        if original_api_key == "" and self.config.model not in VALID_MODELS_FOR_BILLING:
-            raise SteamshipError(
-                f"This plugin cannot be used with model {self.config.model} while using Steamship's API key. Valid models are {VALID_MODELS_FOR_BILLING}"
-            )
-        openai.api_key = self.config.openai_api_key
+        if config.get("n", 1) != 1:
+            raise SteamshipError("There is currently a known bug with this plugin and config value n != 1.")
+
+        self.apply_env(self.config.litellm_env)
+        self.steamship_billing = (original_env == "")
+
+    @staticmethod
+    def get_envs(env_config: str) -> {str: str}:
+        envs = {}
+        for kv_pair in env_config.split(";"):
+            kv = kv_pair.split(":")
+            if len(kv) != 2:
+                raise SteamshipError("litellm_env must be of the form <key>:<value>[;<key>:<value>...]")
+            k, v = kv
+            if not k.endswith("_API_KEY") or k.endswith("_API_BASE") or k.endswith("_API_VERSION"):
+                raise SteamshipError("litellm environment keys must end with _API_KEY, _API_BASE, or _API_VERSION")
+            envs[k] = v
+        return envs
+
+    @staticmethod
+    def apply_env(env_config: str):
+        for k, v in LiteLLMPlugin.get_envs(env_config).items():
+            os.environ[k] = v
 
     def prepare_message(self, block: Block) -> Optional[Dict[str, str]]:
         role = None
@@ -201,14 +249,13 @@ class GPT4Plugin(StreamingGenerator):
     ) -> List[UsageReport]:
         """Call the API to generate the next section of text."""
         logging.info(
-            f"Making OpenAI GPT-4 chat completion call on behalf of user with id: {user}"
+            f"Making LiteLLM call on behalf of user with id: {user}"
         )
         options = options or {}
         stopwords = options.get("stop", None)
         functions = options.get("functions", None)
 
-        # record the time before the request is sent
-        start_time = time.time()
+        billing_callback = BillingCallback() if self.steamship_billing else NoopBilling()
 
         @retry(
             reraise=True,
@@ -216,10 +263,13 @@ class GPT4Plugin(StreamingGenerator):
             wait=wait_exponential_jitter(jitter=5),
             before_sleep=before_sleep_log(logging.root, logging.INFO),
             retry=(
-                retry_if_exception_type(openai.error.Timeout)
-                | retry_if_exception_type(openai.error.APIError)
-                | retry_if_exception_type(openai.error.APIConnectionError)
-                | retry_if_exception_type(openai.error.RateLimitError)
+                retry_if_exception_type(openai.APITimeoutError)
+                | retry_if_exception(
+                    lambda e: isinstance(e, openai.APIError) and not
+                    ("does not support parameters" in e.message) and not
+                    (isinstance(e, openai.AuthenticationError)))
+                | retry_if_exception_type(openai.APIConnectionError)
+                | retry_if_exception_type(openai.RateLimitError)
                 | retry_if_exception_type(
                     ConnectionError
                 )  # handle 104s that manifest as ConnectionResetError
@@ -242,11 +292,19 @@ class GPT4Plugin(StreamingGenerator):
             if functions:
                 kwargs = {**kwargs, "functions": functions}
 
-            logging.info("calling open ai chatcompletion create",
-                         extra={"messages": messages, "functions": functions})
-            return openai.ChatCompletion.create(**kwargs)
+            _, provider, _, _ = get_llm_provider(self.config.model)
+            if provider == "replicate":
+                # TODO This probably can be sidestepped by just using options for this.
+                del kwargs["presence_penalty"]
+                del kwargs["frequency_penalty"]
+                del kwargs["user"]
 
-        openai_result = _generate_with_retry()
+            logging.info("calling litellm.completion",
+                         extra={"messages": messages, "functions": functions})
+            return litellm.completion(**kwargs)
+
+        litellm.success_callback = [billing_callback]
+        litellm_result = _generate_with_retry()
         logging.info(
             "Retry statistics: " + json.dumps(_generate_with_retry.retry.statistics)
         )
@@ -259,7 +317,7 @@ class GPT4Plugin(StreamingGenerator):
         returned_function_parts = [  # did each result return a function
             [] for _ in range(self.config.n)
         ]
-        for chunk in openai_result:
+        for chunk in litellm_result:
             if id := chunk.get("id"):
                 completion_id = id
             for chunk_choice in chunk["choices"]:
@@ -295,50 +353,18 @@ class GPT4Plugin(StreamingGenerator):
         for output_block in output_blocks:
             output_block.finish_stream()
 
-        usage_reports = self._calculate_usage(messages, output_texts, completion_id)
-
-        return usage_reports
+        return billing_callback.usage(completion_id)
 
     def _reassemble_function_call(self, function_call_chunks: List[dict]) -> dict:
         result = {}
         for chunk in function_call_chunks:
-            for key in chunk.keys():
+            model = chunk.model_dump()
+            for key in model.keys():
                 if key not in result:
                     result[key] = ""
-                result[key] += chunk[key]
+                if model[key]:
+                    result[key] += model[key]
         return result
-
-    def _calculate_usage(
-        self,
-        messages: List[Dict[str, str]],
-        output_texts: List[str],
-        completion_id: str,
-    ) -> [UsageReport]:
-        # for token usage tracking, we need to include not just the token usage, but also completion id
-        # that will allow proper usage aggregation for n > 1 cases
-        encoding = tiktoken.encoding_for_model(self.config.model)
-        output_tokens = sum([len(encoding.encode(text)) for text in output_texts])
-        prompt_tokens = sum(
-            [
-                len(encoding.encode(message.get("content", "") or ""))
-                for message in messages
-            ]
-        )
-        usage_reports = [
-            UsageReport(
-                operation_type=OperationType.RUN,
-                operation_unit=OperationUnit.PROMPT_TOKENS,
-                operation_amount=prompt_tokens,
-                audit_id=completion_id,
-            ),
-            UsageReport(
-                operation_type=OperationType.RUN,
-                operation_unit=OperationUnit.SAMPLED_TOKENS,
-                operation_amount=output_tokens,
-                audit_id=completion_id,
-            ),
-        ]
-        return usage_reports
 
     @staticmethod
     def _flagged(messages: List[Dict[str, str]]) -> bool:
@@ -349,8 +375,8 @@ class GPT4Plugin(StreamingGenerator):
                 for value in role_dict.values()
             ]
         )
-        moderation = openai.Moderation.create(input=input_text)
-        return moderation["results"][0]["flagged"]
+        moderation = litellm.moderation(input=input_text)
+        return moderation.results[0].flagged
 
     def run(
         self, request: PluginRequest[RawBlockAndTagPluginInputWithPreallocatedBlocks]
@@ -368,11 +394,11 @@ class GPT4Plugin(StreamingGenerator):
                         block.abort_stream()
             except BaseException as ex:
                 raise SteamshipError(
-                    "Sorry, this content is flagged as inappropriate by OpenAI. Additionally, we were unable to abort the block stream.",
+                    "Sorry, this content is flagged as inappropriate. Additionally, we were unable to abort the block stream.",
                     error=ex
                 )
             raise SteamshipError(
-                "Sorry, this content is flagged as inappropriate by OpenAI."
+                "Sorry, this content is flagged as inappropriate."
             )
         user_id = self.context.user_id if self.context is not None else "testing"
         usage_reports = self.generate_with_retry(
@@ -388,8 +414,8 @@ class GPT4Plugin(StreamingGenerator):
         self, request: PluginRequest[RawBlockAndTagPluginInput]
     ) -> InvocableResponse[BlockTypePluginOutput]:
 
-        if request.data.options is not None and 'model' in request.data.options:
-            raise SteamshipError("Model may not be overridden in options")
+        if request.data.options is not None and 'litellm_env' in request.data.options:
+            raise SteamshipError("Environment (litellm_env) may not be overridden in options")
 
         self.config.extend_with_dict(request.data.options, overwrite=True)
 

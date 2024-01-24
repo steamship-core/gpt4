@@ -1,20 +1,19 @@
 """Test gpt-4 generation via integration tests."""
 import json
-from typing import Optional
 
 import pytest
 from steamship import Block, File, Steamship, MimeTypes, Tag
 from steamship.data import TagKind
 from steamship.data.tags.tag_constants import RoleTag, TagValueKey
 
-GENERATOR_HANDLE = "gpt-4"
+GENERATOR_HANDLE = "litellm"
 
 @pytest.mark.parametrize(
     "model", ["", "gpt-4-32k", "gpt-4-1106-preview"]
 )
 def test_generator(model: str):
-    with Steamship.temporary_workspace() as steamship:
-        gpt4 = steamship.use_plugin(GENERATOR_HANDLE, config={"model": model})
+    with Steamship.temporary_workspace(profile="steamshipProd") as steamship:
+        litellm = steamship.use_plugin(GENERATOR_HANDLE, config={"model": model})
         file = File.create(
             steamship,
             blocks=[
@@ -31,7 +30,7 @@ def test_generator(model: str):
             ],
         )
 
-        generate_task = gpt4.generate(input_file_id=file.id)
+        generate_task = litellm.generate(input_file_id=file.id)
         generate_task.wait()
         output = generate_task.output
         assert len(output.blocks) == 1
@@ -41,23 +40,23 @@ def test_generator(model: str):
 
 
 def test_generator_without_role():
-    with Steamship.temporary_workspace() as steamship:
-        gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
+    with Steamship.temporary_workspace(profile="steamshipProd") as steamship:
+        litellm = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(
             steamship,
             blocks=[
                 Block(text="1 2 3 4"),
             ],
         )
-        generate_task = gpt4.generate(input_file_id=file.id)
+        generate_task = litellm.generate(input_file_id=file.id)
         generate_task.wait()
         output = generate_task.output
         assert len(output.blocks) == 1
 
 
 def test_stopwords():
-    with Steamship.temporary_workspace() as steamship:
-        gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
+    with Steamship.temporary_workspace(profile="steamshipProd") as steamship:
+        litellm = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(
             steamship,
             blocks=[
@@ -73,7 +72,7 @@ def test_stopwords():
                 ),
             ],
         )
-        generate_task = gpt4.generate(
+        generate_task = litellm.generate(
             input_file_id=file.id, options={"stop": ["6", "7"]}
         )
         generate_task.wait()
@@ -84,8 +83,8 @@ def test_stopwords():
 
 
 def test_functions():
-    with Steamship.temporary_workspace() as steamship:
-        gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
+    with Steamship.temporary_workspace(profile="steamshipProd") as steamship:
+        litellm = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(
             steamship,
             blocks=[
@@ -101,7 +100,7 @@ def test_functions():
                 ),
             ],
         )
-        generate_task = gpt4.generate(
+        generate_task = litellm.generate(
             input_file_id=file.id,
             options={
                 "functions": [
@@ -128,8 +127,8 @@ def test_functions():
 
 
 def test_multimodal_functions_with_blocks():
-    with Steamship.temporary_workspace() as steamship:
-        gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
+    with Steamship.temporary_workspace(profile="steamshipProd") as steamship:
+        litellm = steamship.use_plugin(GENERATOR_HANDLE)
         file = File.create(
             steamship,
             blocks=[
@@ -161,7 +160,7 @@ def test_multimodal_functions_with_blocks():
                 ),
             ],
         )
-        generate_task = gpt4.generate(
+        generate_task = litellm.generate(
             input_file_id=file.id,
             options={
                 "functions": [
@@ -219,8 +218,8 @@ def test_multimodal_functions_with_blocks():
 
 
 def test_functions_function_message():
-    with Steamship.temporary_workspace() as steamship:
-        gpt4 = steamship.use_plugin(GENERATOR_HANDLE)
+    with Steamship.temporary_workspace(profile="steamshipProd") as steamship:
+        litellm = steamship.use_plugin(GENERATOR_HANDLE)
 
         file = File.create(
             steamship,
@@ -248,7 +247,7 @@ def test_functions_function_message():
             ],
         )
 
-        generate_task = gpt4.generate(
+        generate_task = litellm.generate(
             input_file_id=file.id,
             options={
                 "functions": [
