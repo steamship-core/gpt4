@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, Type
 
 import litellm
 import openai
-from litellm import completion_cost, get_llm_provider
 from pydantic import Field
 from steamship import Steamship, Block, Tag, SteamshipError, MimeTypes
 from steamship.data.tags.tag_constants import TagKind, RoleTag, TagValueKey, ChatTag
@@ -37,13 +36,16 @@ from tenacity import (
     wait_exponential_jitter, retry_if_exception,
 )
 
-
 BILLING_LOCK_TIMEOUT_SECONDS = 10.0
 # This is a massive multiplier, but we are going to handle the fractional cents pricing-side.
 # This is basically figured by going into the pricing data that I had for LiteLLM and finding the
 # maximum amount of significant figures for any costing and making sure we can capture that precision
 # in an int.
 PRICING_UNITS_MULTIPLIER = 10_000_000_000_000
+
+PLUGIN_HANDLED_KEYS = {"stream", "user", "messages"}
+DEFAULT_MODEL = "gpt-4-0613"
+
 
 class BillingCallback:
     def __init__(self):
@@ -92,53 +94,11 @@ class LiteLLMPlugin(StreamingGenerator):
             "",
             description="LiteLLM provider environment, in the form <key>:<value>[;<key>:<value>...].  See LiteLLM "
                         "documentation for supported variables.  Params must end with _API_KEY, and in the case of "
-                        "'AZURE', _API_VERSION, or _API_BASE"
-        )
-        max_tokens: int = Field(
-            256,
-            description="The maximum number of tokens to generate per request. Can be overridden in runtime options.",
-        )
-        model: Optional[str] = Field(
-            "gpt-4-0613",
-            description="The model name to use. Can be a pre-existing fine-tuned model.",
-        )
-        temperature: Optional[float] = Field(
-            0.4,
-            description="Controls randomness. Lower values produce higher likelihood / more predictable results; "
-            "higher values produce more variety. Values between 0-1.",
-        )
-        top_p: Optional[int] = Field(
-            1,
-            description="Controls the nucleus sampling, where the model considers the results of the tokens with "
-            "top_p probability mass. Values between 0-1.",
-        )
-        presence_penalty: Optional[int] = Field(
-            0,
-            description="Control how likely the model will reuse words. Positive values penalize new tokens based on "
-            "whether they appear in the text so far, increasing the model's likelihood to talk about new topics. Number between -2.0 and 2.0.",
-        )
-        frequency_penalty: Optional[int] = Field(
-            0,
-            description="Control how likely the model will reuse words. Positive values penalize new tokens based on "
-            "their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim. Number between -2.0 and 2.0.",
-        )
-        moderate_output: bool = Field(
-            True,
-            description="Pass the generated output back through OpenAI's moderation endpoint and throw an exception "
-            "if flagged.",
+                        "'AZURE', _API_VERSION, or _API_BASE.  Leaving this empty uses Steamship's environment and "
+                        "thus Steamship billing."
         )
         max_retries: int = Field(
             8, description="Maximum number of retries to make when generating."
-        )
-        n: Optional[int] = Field(
-            1, description="How many completions to generate for each prompt."
-        )
-        default_role: str = Field(
-            RoleTag.USER.value,
-            description="The default role to use for a block that does not have a Tag of kind='role'",
-        )
-        default_system_prompt: str = Field(
-            "", description="System prompt that will be prepended before every request"
         )
 
     @classmethod
@@ -180,7 +140,7 @@ class LiteLLMPlugin(StreamingGenerator):
         for k, v in LiteLLMPlugin.get_envs(env_config).items():
             os.environ[k] = v
 
-    def prepare_message(self, block: Block) -> Optional[Dict[str, str]]:
+    def prepare_message(self, block: Block, options: Dict[str, Any]) -> Optional[Dict[str, str]]:
         role = None
         name = None
         function_selection = False
@@ -207,7 +167,7 @@ class LiteLLMPlugin(StreamingGenerator):
                 name = tag.name
 
         if role is None:
-            role = self.config.default_role
+            role = options.get("default_role", RoleTag.USER.value)
 
         if role not in ["function", "system", "assistant", "user"]:
             logging.warning(f"unsupported role {role} found in message. skipping...")
@@ -224,17 +184,18 @@ class LiteLLMPlugin(StreamingGenerator):
 
         return {"role": role, "content": block.text}
 
-    def prepare_messages(self, blocks: List[Block]) -> List[Dict[str, str]]:
+    def prepare_messages(self, blocks: List[Block], options: Dict[str, Any]) -> List[Dict[str, str]]:
         messages = []
-        if self.config.default_system_prompt != "":
+        default_system_prompt = options.get("default_system_prompt")
+        if default_system_prompt:
             messages.append(
-                {"role": RoleTag.SYSTEM, "content": self.config.default_system_prompt}
+                {"role": RoleTag.SYSTEM, "content": default_system_prompt}
             )
         # TODO: remove is_text check here when can handle image etc. input
         messages.extend(
             [
                 msg for msg in
-                (self.prepare_message(block) for block in blocks if block.text is not None and block.text != "")
+                (self.prepare_message(block, options) for block in blocks if block.text is not None and block.text != "")
                 if msg is not None
             ]
         )
@@ -252,7 +213,9 @@ class LiteLLMPlugin(StreamingGenerator):
             f"Making LiteLLM call on behalf of user with id: {user}"
         )
         options = options or {}
-        stopwords = options.get("stop", None)
+        if "model" not in options:
+            options["model"] = DEFAULT_MODEL
+        model = options["model"]
         functions = options.get("functions", None)
 
         billing_callback = BillingCallback() if self.steamship_billing else NoopBilling()
@@ -278,21 +241,13 @@ class LiteLLMPlugin(StreamingGenerator):
         )
         def _generate_with_retry() -> Any:
             kwargs = dict(
-                model=self.config.model,
+                **options,
                 messages=messages,
                 user=user,
-                presence_penalty=self.config.presence_penalty,
-                frequency_penalty=self.config.frequency_penalty,
-                max_tokens=self.config.max_tokens,
-                stop=stopwords,
-                n=self.config.n,
-                temperature=self.config.temperature,
                 stream=True,
             )
-            if functions:
-                kwargs = {**kwargs, "functions": functions}
 
-            _, provider, _, _ = get_llm_provider(self.config.model)
+            _, provider, _, _ = litellm.get_llm_provider(model)
             if provider == "replicate":
                 # TODO This probably can be sidestepped by just using options for this.
                 del kwargs["presence_penalty"]
@@ -310,12 +265,12 @@ class LiteLLMPlugin(StreamingGenerator):
         )
 
         output_texts = [  # Collect output text for usage counting
-            "" for _ in range(self.config.n)
+            "" for _ in range(options.get('n', 1))
         ]
         # iterate through the stream of events
         completion_id = ""
         returned_function_parts = [  # did each result return a function
-            [] for _ in range(self.config.n)
+            [] for _ in range(options.get('n', 1))
         ]
         for chunk in litellm_result:
             if id := chunk.get("id"):
@@ -378,15 +333,27 @@ class LiteLLMPlugin(StreamingGenerator):
         moderation = litellm.moderation(input=input_text)
         return moderation.results[0].flagged
 
+    def _validate_options(self, options: Dict[str, Any]):
+        if not options:
+            return
+        invalid_keys = PLUGIN_HANDLED_KEYS - options.keys()
+        if invalid_keys:
+            raise SteamshipError("The following keys are handled entirely by the plugin and may not be provided as "
+                                 "options: " + (', '.join(invalid_keys)))
+        if 'litellm_env' in options:
+            raise SteamshipError("Configured environment (litellm_env) may not be overridden in options")
+        if options.get('n', 1) > 1:
+            raise SteamshipError("There is currently a known bug in implementation with this plugin where n > 1.")
+
     def run(
         self, request: PluginRequest[RawBlockAndTagPluginInputWithPreallocatedBlocks]
     ) -> InvocableResponse[StreamCompletePluginOutput]:
         """Run the text generator against all the text, combined"""
 
-        self.config.extend_with_dict(request.data.options, overwrite=True)
-
-        messages = self.prepare_messages(request.data.blocks)
-        if self.config.moderate_output and self._flagged(messages):
+        options = request.data.options
+        self._validate_options(options)
+        messages = self.prepare_messages(request.data.blocks, options)
+        if options.get("moderate_output", False) and self._flagged(messages):
             # Before we bail, we have to mark the blocks as failed -- otherwise they will remain forever in the `streaming` state
             try:
                 if request.data.output_blocks:
@@ -414,14 +381,12 @@ class LiteLLMPlugin(StreamingGenerator):
         self, request: PluginRequest[RawBlockAndTagPluginInput]
     ) -> InvocableResponse[BlockTypePluginOutput]:
 
-        if request.data.options is not None and 'litellm_env' in request.data.options:
-            raise SteamshipError("Environment (litellm_env) may not be overridden in options")
-
-        self.config.extend_with_dict(request.data.options, overwrite=True)
+        options = request.data.options
+        self._validate_options(options)
 
         # We return one block per completion-choice we're configured for (config.n)
         # This expectation is coded into the generate_with_retry method
-        block_types_to_create = [MimeTypes.TXT.value] * self.config.n
+        block_types_to_create = [MimeTypes.TXT.value] * options.get("n", 1)
         return InvocableResponse(
             data=BlockTypePluginOutput(block_types_to_create=block_types_to_create)
         )
