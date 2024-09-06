@@ -10,3 +10,4 @@ venv
 src/.steamship/secrets.toml
 /test/config.json
 .python-version
+.replit
