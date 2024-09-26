@@ -110,6 +110,10 @@ class GPT4Plugin(StreamingGenerator):
         default_system_prompt: str = Field(
             "", description="System prompt that will be prepended before every request"
         )
+        tag_prompt_on_output: Optional[bool] = Field(
+            False,
+            description="Whether to tag the prompt used on the output block emitted. Can be used for debugging.",
+        )
 
     @classmethod
     def config_cls(cls) -> Type[Config]:
@@ -293,6 +297,17 @@ class GPT4Plugin(StreamingGenerator):
                 )
 
         for output_block in output_blocks:
+            # For debugging, we may want to finish by creating a tag that contains the prompt.
+            if self.config.tag_prompt_on_output:
+                Tag.create(
+                    self.client,
+                    file_id=output_block.file_id,
+                    block_id=output_block.id,
+                    kind="debug",
+                    name="prompt",
+                    value={"messages": messages}
+                )
+
             output_block.finish_stream()
 
         usage_reports = self._calculate_usage(messages, output_texts, completion_id)
